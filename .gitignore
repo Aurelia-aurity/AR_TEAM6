@@ -1,0 +1,36 @@
+# Local-only source models and previews.
+/assets/
+
+# Unity generated files (keep Assets/*.meta and ProjectSettings in Git).
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# IDE and local project files.
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.log
+
+# OS and source asset backups.
+.DS_Store
+Thumbs.db
+*.blend1
+*.blend2

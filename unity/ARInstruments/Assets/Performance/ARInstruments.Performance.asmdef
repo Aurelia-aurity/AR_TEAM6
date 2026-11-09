@@ -1,0 +1,5 @@
+{
+    "name": "ARInstruments.Performance",
+    "references": ["ARInstruments.Shared"],
+    "autoReferenced": true
+}
