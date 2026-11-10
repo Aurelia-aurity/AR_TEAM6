@@ -1,5 +1,5 @@
 {
     "name": "ARInstruments.Presentation",
-    "references": ["ARInstruments.Shared"],
+    "references": ["ARInstruments.Shared", "ARInstruments.Tracking"],
     "autoReferenced": true
 }

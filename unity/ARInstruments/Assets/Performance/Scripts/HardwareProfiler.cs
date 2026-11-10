@@ -45,7 +45,7 @@ public sealed class HardwareProfiler : MonoBehaviour
 
         LastCpuFrameTimeMs = frameTimings[0].cpuFrameTime;
         LastGpuFrameTimeMs = frameTimings[0].gpuFrameTime;
-        LastFrameTimeMs = frameTimings[0].frameTime;
+        LastFrameTimeMs = frameTimings[0].cpuFrameTime;
         bool gpuSpike = LastGpuFrameTimeMs >= gpuWarningThresholdMs;
         if (gpuSpike && !warningRaised)
         {
