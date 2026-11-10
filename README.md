@@ -50,6 +50,15 @@ AR_TEAM6/                         # 현재 저장소 폴더: TEAM6
   깊이 임계값을 기준으로 중복 타격을 억제하고 `OnValidHit`를 발행합니다.
 - OpenCVForUnity에 의존하는 이전 CPU 추적 경로는 현재 Unity 패키지 구성에 포함하지 않았습니다.
   모바일 기본 경로는 Compute Shader 구현을 사용합니다.
+- `Presentation/Scripts/CalibrationManager.cs`는 4개 화면 극점과 책상 정지 상태를
+  60샘플씩 수집하는 FSM입니다. `RawMalletSample`을 사용하므로 픽셀 좌표와 원시 색상
+  영역값을 잃지 않고 `CoordinateMapper`에 적용합니다.
+- `GpuMalletTracker`는 3슬롯 `AsyncGPUReadback`을 사용하여 `ComputeBuffer.GetData()`로
+  CPU를 동기 대기시키지 않습니다. `Performance/Scripts/HardwareProfiler.cs`는 60 FPS
+  목표와 CPU/GPU 프레임 시간을 측정합니다.
+- Unity Editor에서 `ARInstruments/Apply Android performance settings`를 실행하면
+  Android Graphics API를 Vulkan으로 고정하고 Frame Timing Stats 및 IL2CPP를 활성화합니다.
+  `AudioManager.asset`은 낮은 지연을 위해 DSP buffer를 256 samples로 설정했습니다.
 
 상세한 데이터 구조와 이벤트 계약은
 [영문 계약 문서](docs/event_bus_architecture_data_structures_en.md)와

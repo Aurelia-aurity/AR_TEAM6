@@ -55,6 +55,9 @@ public static class GameEventBus
     /// </summary>
     public static Action<int> OnTrackingLost; // int 为 MalletId
 
+    // A -> calibration: raw pixel centroid and color-mask area before world mapping.
+    public static Action<RawMalletSample> OnRawMalletSample;
+
     // ==========================================
     // Module C (Logic) 发布 -> Module B (UI/AR) 订阅
     // ==========================================

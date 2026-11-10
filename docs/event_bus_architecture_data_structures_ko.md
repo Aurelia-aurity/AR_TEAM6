@@ -55,6 +55,9 @@ public static class GameEventBus
     /// </summary>
     public static Action<int> OnTrackingLost; // int는 MalletId를 의미합니다.
 
+    // A -> calibration: 월드 좌표 변환 전의 픽셀 중심과 색상 마스크 면적입니다.
+    public static Action<RawMalletSample> OnRawMalletSample;
+
     // ==========================================
     // Module C (Logic) 발행 -> Module B (UI/AR) 구독
     // ==========================================

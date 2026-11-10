@@ -10,6 +10,9 @@ public static class GameEventBus
     // A -> B, C: ID of the mallet whose tracking was lost.
     public static Action<int> OnTrackingLost;
 
+    // A -> calibration: raw values required to build a CoordinateMapper calibration.
+    public static Action<RawMalletSample> OnRawMalletSample;
+
     // C -> presentation and audio: one valid hit.
     public static Action<HitEvent> OnValidHit;
 }
