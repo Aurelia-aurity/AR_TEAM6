@@ -55,6 +55,15 @@ public static class GameEventBus
     /// </summary>
     public static Action<int> OnTrackingLost; // int는 MalletId를 의미합니다.
 
+    // 순서 검사가 필요한 구독자는 관측 시각이 포함된 이 이벤트를 사용합니다.
+    public static Action<int, double> OnTrackingLostAt;
+
+    public static void PublishTrackingLost(int malletId, double timestampMs)
+    {
+        OnTrackingLostAt?.Invoke(malletId, timestampMs);
+        OnTrackingLost?.Invoke(malletId); // 기존 구독자 호환
+    }
+
     // A -> calibration: 월드 좌표 변환 전의 픽셀 중심과 색상 마스크 면적입니다.
     public static Action<RawMalletSample> OnRawMalletSample;
 
@@ -72,6 +81,8 @@ public static class GameEventBus
 ```
 
 ## 3. 모듈별 개발 범위 및 책임 (Module Responsibilities)
+
+실패 발행자는 `PublishTrackingLost(id, observationTimestampMs)`를 호출합니다. 시각은 같은 관측의 `MalletState.TimestampMs`와 동일한 `Time.realtimeSinceStartupAsDouble * 1000` 기준이며, 지연된 콜백의 현재 시각으로 바꾸지 않습니다. 기존 `OnTrackingLost(int)` 시그니처는 유지합니다. B의 커서는 `OnTrackingLostAt`에 순서 검사를 적용하며 시각 없는 호환 알림을 상태 변경 근거로 사용하지 않습니다.
 
 - **Module A (CV — 사용자가 현재 담당):** 카메라 영상을 입력받아 `MalletState`를 계산하고, 매 프레임 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`를 호출하는 역할만 담당합니다. CV 코드에는 어떠한 충돌 감지 코드도 **작성하지 마세요.**
 

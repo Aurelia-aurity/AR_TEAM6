@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -32,6 +33,9 @@ public sealed class CameraDisplayView : MonoBehaviour
     public CameraDisplayStatus Status { get; private set; }
     public bool MirrorEnabled => mirrorEnabled;
     public float VideoAspectRatio => viewportAspect != null ? viewportAspect.aspectRatio : 16f / 9f;
+
+    // Raised synchronously, including when input restarts before the next LateUpdate.
+    public event Action InputInvalidated;
 
     private bool HasReferences => cameraImage != null && viewportAspect != null
         && waitingPlaceholder != null && placeholderTitle != null && placeholderHint != null
@@ -173,6 +177,8 @@ public sealed class CameraDisplayView : MonoBehaviour
 
     private void ClearFrame()
     {
+        if (Status == CameraDisplayStatus.Streaming)
+            InputInvalidated?.Invoke();
         cameraImage.enabled = false;
         cameraImage.texture = null;
         mirrorRoot.gameObject.SetActive(false);

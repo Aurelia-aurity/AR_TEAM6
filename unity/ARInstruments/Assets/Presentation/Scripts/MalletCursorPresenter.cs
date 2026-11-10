@@ -27,6 +27,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     private CursorSample left;
     private CursorSample right;
     private bool debugEnabled;
+    private double acceptAfterTimestampMs;
 
     public bool DebugCursorsEnabled => debugEnabled;
     public Camera ProjectionCamera => projectionCamera;
@@ -42,9 +43,11 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void OnEnable()
     {
-        ResetSamples();
+        InvalidateSamples();
         GameEventBus.OnMalletsTracked += OnMalletsTracked;
-        GameEventBus.OnTrackingLost += OnTrackingLost;
+        GameEventBus.OnTrackingLostAt += OnTrackingLost;
+        if (display != null)
+            display.InputInvalidated += InvalidateSamples;
         if (debugToggle != null)
         {
             debugToggle.onValueChanged.AddListener(SetDebugCursorsEnabled);
@@ -56,14 +59,15 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     private void OnDisable()
     {
         GameEventBus.OnMalletsTracked -= OnMalletsTracked;
-        GameEventBus.OnTrackingLost -= OnTrackingLost;
+        GameEventBus.OnTrackingLostAt -= OnTrackingLost;
+        if (display != null)
+            display.InputInvalidated -= InvalidateSamples;
         if (debugToggle != null)
         {
             debugToggle.onValueChanged.RemoveListener(SetDebugCursorsEnabled);
             debugToggle.interactable = false;
         }
-        ResetSamples();
-        HideCursors();
+        InvalidateSamples();
     }
 
     public void SetDebugCursorsEnabled(bool value)
@@ -74,8 +78,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
             return;
         debugEnabled = value;
         // Never restore samples left over from a previous debug session.
-        ResetSamples();
-        HideCursors();
+        InvalidateSamples();
     }
 
     public void SetProjectionCamera(Camera value)
@@ -83,8 +86,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
         if (projectionCamera == value)
             return;
         projectionCamera = value;
-        ResetSamples();
-        HideCursors();
+        InvalidateSamples();
     }
 
     private void LateUpdate()
@@ -104,7 +106,8 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void OnMalletsTracked(MalletState first, MalletState second)
     {
-        if (!debugEnabled)
+        if (!debugEnabled || display == null || !display.isActiveAndEnabled
+            || display.Status != CameraDisplayStatus.Streaming || projectionCamera == null)
             return;
         Accept(first);
         Accept(second);
@@ -118,16 +121,15 @@ public sealed class MalletCursorPresenter : MonoBehaviour
             Accept(ref right, state);
     }
 
-    private static void Accept(ref CursorSample sample, MalletState state)
+    private void Accept(ref CursorSample sample, MalletState state)
     {
         double nowMs = Time.realtimeSinceStartupAsDouble * 1000.0;
-        if (double.IsNaN(state.TimestampMs) || double.IsInfinity(state.TimestampMs) || state.TimestampMs < 0
-            || state.TimestampMs > nowMs + 50.0)
+        if (!IsValidTimestamp(state.TimestampMs, nowMs))
         {
             sample.Tracked = false;
             return;
         }
-        if (state.TimestampMs <= sample.LastTimestampMs)
+        if (state.TimestampMs <= acceptAfterTimestampMs || state.TimestampMs <= sample.LastTimestampMs)
             return;
 
         sample.LastTimestampMs = state.TimestampMs;
@@ -137,15 +139,22 @@ public sealed class MalletCursorPresenter : MonoBehaviour
             && IsFinite(state.Position.x) && IsFinite(state.Position.y) && IsFinite(state.Position.z);
     }
 
-    private void OnTrackingLost(int malletId)
+    private void OnTrackingLost(int malletId, double timestampMs)
     {
-        if (malletId == 0)
+        if (!debugEnabled || display == null || !display.isActiveAndEnabled
+            || display.Status != CameraDisplayStatus.Streaming || projectionCamera == null
+            || !IsValidTimestamp(timestampMs, Time.realtimeSinceStartupAsDouble * 1000.0)
+            || timestampMs <= acceptAfterTimestampMs)
+            return;
+        if (malletId == 0 && timestampMs >= left.LastTimestampMs)
         {
+            left.LastTimestampMs = timestampMs;
             left.Tracked = false;
             SetVisible(leftCursor, false);
         }
-        else if (malletId == 1)
+        else if (malletId == 1 && timestampMs >= right.LastTimestampMs)
         {
+            right.LastTimestampMs = timestampMs;
             right.Tracked = false;
             SetVisible(rightCursor, false);
         }
@@ -181,6 +190,15 @@ public sealed class MalletCursorPresenter : MonoBehaviour
         right = new CursorSample { LastTimestampMs = double.NegativeInfinity };
     }
 
+    private void InvalidateSamples()
+    {
+        // Also reject observations captured before the input/debug/projection reset,
+        // even if an async provider delivers them after the new input starts.
+        acceptAfterTimestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        ResetSamples();
+        HideCursors();
+    }
+
     private void HideCursors()
     {
         SetVisible(leftCursor, false);
@@ -194,4 +212,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     }
 
     private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+    private static bool IsValidTimestamp(double value, double nowMs) =>
+        !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0 && value <= nowMs + 50.0;
 }

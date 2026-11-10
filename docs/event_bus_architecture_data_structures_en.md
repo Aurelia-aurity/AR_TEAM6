@@ -55,6 +55,15 @@ public static class GameEventBus
     /// </summary>
     public static Action<int> OnTrackingLost; // int 为 MalletId
 
+    // Ordered consumers use the failed observation's TimestampMs.
+    public static Action<int, double> OnTrackingLostAt;
+
+    public static void PublishTrackingLost(int malletId, double timestampMs)
+    {
+        OnTrackingLostAt?.Invoke(malletId, timestampMs);
+        OnTrackingLost?.Invoke(malletId); // Preserve existing subscribers.
+    }
+
     // A -> calibration: raw pixel centroid and color-mask area before world mapping.
     public static Action<RawMalletSample> OnRawMalletSample;
 
@@ -71,6 +80,8 @@ public static class GameEventBus
 ```
 
 ## 3. 开发边界与职责 (Module Responsibilities)
+
+Failure publishers call `PublishTrackingLost(id, observationTimestampMs)`. The timestamp uses the same `Time.realtimeSinceStartupAsDouble * 1000` clock as the observation's `MalletState.TimestampMs`; do not substitute callback arrival time. The existing `OnTrackingLost(int)` signature remains available. B's cursors order `OnTrackingLostAt` against tracked samples and do not let an unversioned legacy notification override ordered state.
 
 *   **Module A (CV - 用户当前负责):** 只负责消费摄像头画面，计算 `MalletState`，并在每帧调用 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`。**不要**在 CV 代码里写任何碰撞检测代码。
 *   **Module B (AR/UI):** 只负责监听总线。监听 `OnMalletsTracked` 更新画面上的光标位置；监听 `OnValidHit` 播放视觉特效。

@@ -77,12 +77,13 @@ Canvas 기준 해상도는 1280×720이며 화면 크기에 따라 스케일을 
 
 ## 개발·보정용 채 커서
 
-- `MalletCursorPresenter`는 `OnEnable`에서 `GameEventBus.OnMalletsTracked`와 `OnTrackingLost`를 구독하고 `OnDisable`에서 해제합니다. 두 입력 인자의 순서가 바뀌어도 `MalletId` 0/1을 기준으로 각각 갱신합니다.
+- `MalletCursorPresenter`는 `OnEnable`에서 `GameEventBus.OnMalletsTracked`와 시각이 포함된 `OnTrackingLostAt`를 구독하고 `OnDisable`에서 해제합니다. 두 입력 인자의 순서가 바뀌어도 `MalletId` 0/1을 기준으로 각각 갱신합니다.
 - 커서는 기본적으로 숨겨집니다. `Cursor debug` 또는 `SetDebugCursorsEnabled(true)`로 켭니다. 껐다가 다시 켜면 새 추적 샘플을 받아야 표시됩니다. 이 설정은 타격 판정·오디오에 관여하지 않습니다.
 - 투영 카메라의 `WorldToViewportPoint` 결과를 `OverlayRoot` 안의 정규화된 표시 위치로 사용합니다. 좌우 반전은 기존 `MirrorRoot`에서 한 번만 적용합니다.
 - 신뢰도 0 이하·비정상 수치, 카메라 앞뒤 클리핑 범위 밖·화면 밖 좌표, 추적 실패 이벤트는 해당 커서를 숨깁니다. 한쪽 실패는 다른 쪽 커서에 영향을 주지 않습니다.
 - 기본 0.5초 동안 새 샘플이 없거나 샘플 자체가 오래되면 숨깁니다. `TimestampMs`는 기존 추적기의 기준과 같은 `Time.realtimeSinceStartupAsDouble * 1000` 밀리초를 사용해야 합니다. 이전 시각의 재전송 샘플은 무시하며, 50ms 넘게 미래인 시각은 유효한 샘플로 사용하지 않습니다.
-- 영상 입력 중단, 표시 컴포넌트 비활성화, 투영 카메라 변경 시 이전 샘플은 폐기합니다. 새 유효 샘플이 오면 복구합니다.
+- 영상 입력 중단은 `CameraDisplayView.InputInvalidated`로 즉시 전달해 이전 샘플을 폐기합니다. 같은 프레임에 영상이 재시작되어도 이전 커서가 복원되지 않으며, 중단 전 관측이 비동기로 늦게 도착해도 버립니다. 표시 컴포넌트 비활성화, 디버그 전환, 투영 카메라 변경도 새 샘플을 요구합니다.
+- 실패 발행자는 `GameEventBus.PublishTrackingLost(malletId, observationTimestampMs)`를 사용합니다. 시각은 실패를 알리는 순간이 아닌 해당 관측의 `MalletState.TimestampMs`입니다. 기존 `OnTrackingLost(int)`도 호환용으로 발행되지만 커서는 그 알림만으로 상태를 바꾸지 않습니다. 구형 실패는 무시하고, 최신 또는 같은 관측 시각의 실패는 즉시 숨깁니다.
 - 시뮬레이터는 `Cursor debug`가 켜지고 테스트 영상이 정상 표시될 때만 테스트 추적 이벤트를 발행합니다. 자체 테스트 카메라의 종횡비만 영상에 맞추며, 실제 보정 카메라는 수정하지 않습니다.
 
 실제 연동에서는 A와 합의한 **방향 보정 후 기준 영상에 대응하는 월드→영상 투영 카메라**를 연결해야 합니다. 카메라의 내부 파라미터·위치·자세·왜곡 처리와 영상 방향의 일치는 제공자와 통합 검증할 항목입니다. 임의의 테스트 카메라를 연결한 상태로 실제 채와 커서가 정합된다고 판단하지 않습니다.
@@ -91,7 +92,8 @@ Canvas 기준 해상도는 1280×720이며 화면 크기에 따라 스케일을 
 // 실제 영상·추적을 연결하기 전에 TestVideoInput과 TestTrackingInput을 비활성화합니다.
 cursors.SetProjectionCamera(calibratedReferenceCamera);
 cursors.SetDebugCursorsEnabled(true); // 개발·보정 화면에서만 사용
-// A가 기존 GameEventBus.OnMalletsTracked / OnTrackingLost로 발행한 데이터를 표시합니다.
+// A의 OnMalletsTracked / OnTrackingLostAt 데이터를 표시합니다.
+// A는 실패 관측 시 PublishTrackingLost(id, observationTimestampMs)를 호출합니다.
 ```
 
 ## A 입력과 연결할 API
@@ -128,4 +130,5 @@ display.ShowError("The camera input was disconnected.");
 - 16:9·4:3·세로 영상과 회전 영상의 비율 유지·잘림 여부, 오류·입력 중단 시 이전 영상 제거와 재입력 복구를 검증합니다.
 - 작업용 씬을 Play 모드로 실행하여 Toggle 라벨의 UI 레이캐스트·클릭, 거울 모드 전환, 테스트 영상 → 오류 → 대기 → 정상 복구와 표시 컴포넌트 비활성화·재활성화 후 선택 유지를 검증합니다.
 - 커서 테스트는 기본 숨김, 디버그 Toggle 클릭, ID별 독립 갱신, 투영 카메라의 위치·자세 반영, 거울 모드, 신뢰도·가림·화면 밖·비정상 수치·오래된/역순 샘플, 입력 중단·재활성화와 새 샘플 복구를 검증합니다.
+- 회귀 테스트는 같은 프레임의 대기·오류→재시작, 중단 전 샘플의 지연 도착, 역순 실패 알림, 같은 시각의 실패 후 재전송, 정상 복구와 기존 실패 알림 구독자 호환을 검증합니다.
 - 실제 카메라 수신, 실제 영상과 채·악기의 정합 검증은 포함하지 않습니다. FR-002 완료 여부는 해당 후속 작업까지 검증한 뒤 판단합니다.

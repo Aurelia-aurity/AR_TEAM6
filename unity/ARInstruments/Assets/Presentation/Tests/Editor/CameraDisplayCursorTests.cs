@@ -60,7 +60,7 @@ public sealed class CameraDisplayCursorTests
         AssertCursorsRendered(display, left, right);
         CameraDisplayPreviewPlayTests.CaptureState(display, "cursors-mirrored");
 
-        GameEventBus.OnTrackingLost?.Invoke(0);
+        GameEventBus.PublishTrackingLost(0, NowMs());
         Assert.That(left.gameObject.activeSelf, Is.False);
         Assert.That(right.gameObject.activeSelf, Is.True);
         Publish(projection);

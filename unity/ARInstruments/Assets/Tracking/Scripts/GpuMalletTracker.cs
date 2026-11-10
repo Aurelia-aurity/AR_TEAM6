@@ -154,7 +154,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         int threadGroupsY = Mathf.CeilToInt(webCam.height / (float)ThreadsPerGroup);
         trackerShader.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
-        double timestampMs = Time.realtimeSinceStartup * 1000.0;
+        double timestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
         dispatchTimestamps[slot] = timestampMs;
         readbackPending[slot] = true;
         switch (slot)
@@ -245,7 +245,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         if (pixelCount <= minPixelArea)
         {
             filter.Clear();
-            GameEventBus.OnTrackingLost?.Invoke(malletId);
+            GameEventBus.PublishTrackingLost(malletId, timestampMs);
             return new MalletState
             {
                 MalletId = malletId,

@@ -41,8 +41,8 @@ public sealed class MalletCursorPreviewSource : MonoBehaviour
         GameEventBus.OnMalletsTracked?.Invoke(
             new MalletState { MalletId = 0, Position = left, Confidence = leftTracked ? 1 : 0, TimestampMs = timestampMs },
             new MalletState { MalletId = 1, Position = right, Confidence = rightTracked ? 1 : 0, TimestampMs = timestampMs });
-        if (!leftTracked) GameEventBus.OnTrackingLost?.Invoke(0);
-        if (!rightTracked) GameEventBus.OnTrackingLost?.Invoke(1);
+        if (!leftTracked) GameEventBus.PublishTrackingLost(0, timestampMs);
+        if (!rightTracked) GameEventBus.PublishTrackingLost(1, timestampMs);
         wasPublishing = true;
     }
 
@@ -52,8 +52,9 @@ public sealed class MalletCursorPreviewSource : MonoBehaviour
     {
         if (!wasPublishing)
             return;
-        GameEventBus.OnTrackingLost?.Invoke(0);
-        GameEventBus.OnTrackingLost?.Invoke(1);
+        double timestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        GameEventBus.PublishTrackingLost(0, timestampMs);
+        GameEventBus.PublishTrackingLost(1, timestampMs);
         wasPublishing = false;
     }
 }
