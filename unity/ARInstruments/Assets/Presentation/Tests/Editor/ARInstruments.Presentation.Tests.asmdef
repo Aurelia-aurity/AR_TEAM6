@@ -1,0 +1,7 @@
+{
+    "name": "ARInstruments.Presentation.Tests",
+    "references": ["ARInstruments.Presentation", "Unity.ugui"],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"],
+    "autoReferenced": false
+}

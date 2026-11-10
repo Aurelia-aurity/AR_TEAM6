@@ -419,6 +419,55 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   m_Asset: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_ActionId: 15cef263-9014-4fd5-94d9-4e4a6234a6ef
+--- !u!1 &831220826
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 831220828}
+  - component: {fileID: 831220827}
+  m_Layer: 0
+  m_Name: TestVideoInput
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &831220827
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 831220826}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd0bbb5d38381a64bab8c615897be7a7, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  display: {fileID: 951146282}
+  inputMode: 0
+  frameSize: {x: 640, y: 360}
+  clockwiseRotation: 0
+  verticallyMirrored: 0
+--- !u!4 &831220828
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 831220826}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -593,6 +642,17 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b4996c2f380d8544caebb453dcb053ec, type: 3}
+--- !u!114 &951146282 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2085186920683492457, guid: b4996c2f380d8544caebb453dcb053ec, type: 3}
+  m_PrefabInstance: {fileID: 951146281}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0610e7a3f8371d542b6108302405ee4f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!114 &1017082504
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -778,3 +838,4 @@ SceneRoots:
   - {fileID: 832575519}
   - {fileID: 951146281}
   - {fileID: 1912995730}
+  - {fileID: 831220828}
