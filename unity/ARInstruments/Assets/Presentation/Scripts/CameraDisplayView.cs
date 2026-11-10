@@ -31,6 +31,7 @@ public sealed class CameraDisplayView : MonoBehaviour
 
     public CameraDisplayStatus Status { get; private set; }
     public bool MirrorEnabled => mirrorEnabled;
+    public float VideoAspectRatio => viewportAspect != null ? viewportAspect.aspectRatio : 16f / 9f;
 
     private bool HasReferences => cameraImage != null && viewportAspect != null
         && waitingPlaceholder != null && placeholderTitle != null && placeholderHint != null

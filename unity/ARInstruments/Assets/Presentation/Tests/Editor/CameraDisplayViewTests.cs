@@ -307,14 +307,14 @@ public sealed class CameraDisplayPreviewPlayTests
         Assert.That(toggle.interactable, Is.True);
         Assert.That(view.MirrorEnabled, Is.False);
         CaptureState(view, "streaming");
-        ClickMirrorLabel(view);
+        ClickToggleLabel(view, "MirrorToggle");
         yield return null;
         Assert.That(view.MirrorEnabled, Is.True);
         Assert.That(toggle.isOn, Is.True);
         CaptureState(view, "mirror-on");
-        ClickMirrorLabel(view);
+        ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.False);
-        ClickMirrorLabel(view);
+        ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.True);
 
         CameraDisplayPreviewSource source = Object.FindFirstObjectByType<CameraDisplayPreviewSource>();
@@ -353,17 +353,17 @@ public sealed class CameraDisplayPreviewPlayTests
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
         Assert.That(toggle.interactable, Is.True);
         Assert.That(toggle.isOn, Is.True);
-        ClickMirrorLabel(view);
+        ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.False);
-        ClickMirrorLabel(view);
+        ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.True);
         yield return new ExitPlayMode();
     }
 
-    private static void ClickMirrorLabel(CameraDisplayView view)
+    internal static void ClickToggleLabel(CameraDisplayView view, string toggleName)
     {
         Canvas.ForceUpdateCanvases();
-        RectTransform label = view.transform.Find("Footer/MirrorToggle/Label") as RectTransform;
+        RectTransform label = view.transform.Find("Footer/" + toggleName + "/Label") as RectTransform;
         PointerEventData pointer = new PointerEventData(EventSystem.current)
         {
             button = PointerEventData.InputButton.Left,
@@ -371,13 +371,13 @@ public sealed class CameraDisplayPreviewPlayTests
         };
         List<RaycastResult> hits = new List<RaycastResult>();
         EventSystem.current.RaycastAll(pointer, hits);
-        Assert.That(hits.Count, Is.GreaterThan(0), "The mirror label must be clickable.");
+        Assert.That(hits.Count, Is.GreaterThan(0), "The Toggle label must be clickable: " + toggleName);
         Assert.That(hits[0].gameObject, Is.EqualTo(label.gameObject));
         Assert.That(ExecuteEvents.ExecuteHierarchy(hits[0].gameObject, pointer, ExecuteEvents.pointerClickHandler),
             Is.Not.Null);
     }
 
-    private static void CaptureState(CameraDisplayView view, string state)
+    internal static void CaptureState(CameraDisplayView view, string state)
     {
         Canvas canvas = view.GetComponent<Canvas>();
         Camera camera = Camera.main;
