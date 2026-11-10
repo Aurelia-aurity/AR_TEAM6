@@ -1,0 +1,66 @@
+#pragma kernel CSMain
+
+// 手机摄像头的输入画面
+Texture2D<float4> InputTexture;
+
+// 左右手 HSV 阈值 (注意：在 HLSL 中，H, S, V 的范围都是 0.0 ~ 1.0)
+float3 LeftLowerHSV;
+float3 LeftUpperHSV;
+float3 RightLowerHSV;
+float3 RightUpperHSV;
+
+// 显存数据输出通道
+// [0]=左手X坐标和, [1]=左手Y坐标和, [2]=左手面积像素数
+// [3]=右手X坐标和, [4]=右手Y坐标和, [5]=右手面积像素数
+RWStructuredBuffer<uint> ResultBuffer;
+
+// RGB 转 HSV 的核心算法 (GPU 极速版)
+float3 RGBtoHSV(float3 c)
+{
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    float4 p = c.g < c.b ? float4(c.bg, K.wz) : float4(c.gb, K.xy);
+    float4 q = c.r < p.x ? float4(p.xyw, c.r) : float4(c.r, p.yzx);
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+// 8x8 线程组，每次并发处理 64 个像素
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    uint width;
+    uint height;
+    InputTexture.GetDimensions(width, height);
+
+    // 防止越界
+    if (id.x >= width || id.y >= height)
+    {
+        return;
+    }
+
+    // 读取当前像素颜色并转为 HSV
+    float4 color = InputTexture[id.xy];
+    float3 hsv = RGBtoHSV(color.rgb);
+
+    // --- 左手(如粉色)检测 ---
+    if (hsv.x >= LeftLowerHSV.x && hsv.x <= LeftUpperHSV.x &&
+        hsv.y >= LeftLowerHSV.y && hsv.y <= LeftUpperHSV.y &&
+        hsv.z >= LeftLowerHSV.z && hsv.z <= LeftUpperHSV.z)
+    {
+        // 核心原子操作：线程安全地将当前坐标累加到显存中
+        InterlockedAdd(ResultBuffer[0], id.x);
+        InterlockedAdd(ResultBuffer[1], id.y);
+        InterlockedAdd(ResultBuffer[2], 1);
+    }
+
+    // --- 右手(如绿色)检测 ---
+    if (hsv.x >= RightLowerHSV.x && hsv.x <= RightUpperHSV.x &&
+        hsv.y >= RightLowerHSV.y && hsv.y <= RightUpperHSV.y &&
+        hsv.z >= RightLowerHSV.z && hsv.z <= RightUpperHSV.z)
+    {
+        InterlockedAdd(ResultBuffer[3], id.x);
+        InterlockedAdd(ResultBuffer[4], id.y);
+        InterlockedAdd(ResultBuffer[5], 1);
+    }
+}

@@ -38,3 +38,19 @@ AR_TEAM6/                         # 현재 저장소 폴더: TEAM6
 - [기능 명세서](docs/AR_가상악기_기능명세_표정리.md)
 - [공통 데이터·이벤트 인터페이스 규약](docs/event_bus_architecture_data_structures_ko.md)
 - [Unity 프로젝트 협업 안내](docs/unity_project_setup_ko.md)
+
+## 현재 구현
+
+- `Tracking/Scripts/GpuMalletTracker.cs`와 `Tracking/Shaders/MalletTracker.compute`는
+  WebCamTexture를 Compute Shader로 처리하여 좌우 말렛의 색상 영역을 추적합니다.
+- `Tracking/Scripts/KalmanFilter2D.cs`는 추적 좌표와 속도를 평활화합니다.
+- `Tracking/Scripts/CoordinateMapper.cs`는 카메라 픽셀·색상 영역을 Unity 월드 좌표로 변환하는
+  보정 유틸리티입니다.
+- `Performance/Scripts/HitDetectionCore.cs`는 이벤트 버스를 구독하여 히트박스와 속도,
+  깊이 임계값을 기준으로 중복 타격을 억제하고 `OnValidHit`를 발행합니다.
+- OpenCVForUnity에 의존하는 이전 CPU 추적 경로는 현재 Unity 패키지 구성에 포함하지 않았습니다.
+  모바일 기본 경로는 Compute Shader 구현을 사용합니다.
+
+상세한 데이터 구조와 이벤트 계약은
+[영문 계약 문서](docs/event_bus_architecture_data_structures_en.md)와
+[한국어 계약 문서](docs/event_bus_architecture_data_structures_ko.md)를 참고하세요.
