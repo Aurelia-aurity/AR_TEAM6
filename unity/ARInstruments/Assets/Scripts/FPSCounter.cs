@@ -3,6 +3,8 @@ using UnityEngine;
 public class FPSCounter : MonoBehaviour
 {
     private float deltaTime;
+    private float timer;
+    private const float LogInterval = 1.0f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Init()
@@ -15,8 +17,13 @@ public class FPSCounter : MonoBehaviour
     private void Update()
     {
         deltaTime += (Time.unscaledDeltaTime - deltaTime) * 0.1f;
-        float fps = 1.0f / deltaTime;
+        timer += Time.unscaledDeltaTime;
 
-        Debug.LogWarning($"[Performance Warning] Current Fps: {fps:F1}");
+        if (timer >= LogInterval)
+        {
+            float fps = 1.0f / deltaTime;
+            Debug.Log($"[Performance Warning] Current Fps: {fps:F1}");
+            timer = 0.0f;
+        }
     }
 }
