@@ -356,27 +356,27 @@ public sealed class GpuMalletTracker : MonoBehaviour
                 resultBuffers[i] = null;
             }
         }
+    }
 
-        public void ApplyCalibration(
-            Vector2 calibratedPixelMin,
-            Vector2 calibratedPixelMax,
-            double calibratedAreaMin,
-            double calibratedAreaMax)
+    public void ApplyCalibration(
+        Vector2 calibratedPixelMin,
+        Vector2 calibratedPixelMax,
+        double calibratedAreaMin,
+        double calibratedAreaMax)
+    {
+        pixelMin = calibratedPixelMin;
+        pixelMax = calibratedPixelMax;
+        areaMin = calibratedAreaMin;
+        areaMax = calibratedAreaMax;
+        if (cameraCalibrationReady)
         {
-            pixelMin = calibratedPixelMin;
-            pixelMax = calibratedPixelMax;
-            areaMin = calibratedAreaMin;
-            areaMax = calibratedAreaMax;
-            if (cameraCalibrationReady)
-            {
-                coordinateMapper.UpdateCalibration(
-                    pixelMin,
-                    pixelMax,
-                    areaMin,
-                    areaMax,
-                    worldMin,
-                    worldMax);
-            }
+            coordinateMapper.UpdateCalibration(
+                pixelMin,
+                pixelMax,
+                areaMin,
+                areaMax,
+                worldMin,
+                worldMax);
         }
     }
 }
