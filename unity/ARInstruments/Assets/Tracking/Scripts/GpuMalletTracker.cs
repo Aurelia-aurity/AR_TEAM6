@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Native WebCamTexture and compute-shader tracker for both mallets.
-/// Publishes normalized screen coordinates through the shared event bus.
+/// Publishes calibrated world-space states through the shared event bus.
 /// </summary>
 public sealed class GpuMalletTracker : MonoBehaviour
 {
@@ -26,6 +26,14 @@ public sealed class GpuMalletTracker : MonoBehaviour
     [Min(0.0001f)]
     public float measurementNoise = 0.5f;
 
+    [Header("World calibration")]
+    public Vector2 pixelMin = new Vector2(200.0f, 200.0f);
+    public Vector2 pixelMax = new Vector2(1080.0f, 520.0f);
+    public double areaMin = 100.0;
+    public double areaMax = 3000.0;
+    public Vector3 worldMin = new Vector3(-5.0f, -3.0f, 0.0f);
+    public Vector3 worldMax = new Vector3(5.0f, 3.0f, 2.0f);
+
     private const int ResultCount = 6;
     private const int ThreadsPerGroup = 8;
 
@@ -35,6 +43,9 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private int kernelIndex;
     private readonly KalmanFilter2D leftFilter = new KalmanFilter2D();
     private readonly KalmanFilter2D rightFilter = new KalmanFilter2D();
+    private readonly CoordinateMapper coordinateMapper = new CoordinateMapper();
+    private bool cameraCalibrationReady;
+    private bool frontFacingCamera;
 
     private void Start()
     {
@@ -70,6 +81,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             }
         }
 
+        frontFacingCamera = selectedDevice.isFrontFacing;
         webCam = new WebCamTexture(selectedDevice.name, 1280, 720, 60);
         webCam.Play();
         if (cameraDebugger != null)
@@ -90,6 +102,22 @@ public sealed class GpuMalletTracker : MonoBehaviour
             return;
         }
 
+        if (!cameraCalibrationReady)
+        {
+            coordinateMapper.SetupCamera(
+                webCam.width,
+                webCam.height,
+                frontFacingCamera);
+            coordinateMapper.UpdateCalibration(
+                pixelMin,
+                pixelMax,
+                areaMin,
+                areaMax,
+                worldMin,
+                worldMax);
+            cameraCalibrationReady = true;
+        }
+
         ClearResultBuffer();
         trackerShader.SetTexture(kernelIndex, "InputTexture", webCam);
         trackerShader.SetVector("LeftLowerHSV", leftLowerHSV);
@@ -104,8 +132,20 @@ public sealed class GpuMalletTracker : MonoBehaviour
         resultBuffer.GetData(resultData);
 
         double timestampMs = Time.realtimeSinceStartup * 1000.0;
-        MalletState leftState = CreateState(0, resultData[0], resultData[1], resultData[2], timestampMs, leftFilter);
-        MalletState rightState = CreateState(1, resultData[3], resultData[4], resultData[5], timestampMs, rightFilter);
+        MalletState leftState = CreateState(
+            0,
+            resultData[0],
+            resultData[1],
+            resultData[2],
+            timestampMs,
+            leftFilter);
+        MalletState rightState = CreateState(
+            1,
+            resultData[3],
+            resultData[4],
+            resultData[5],
+            timestampMs,
+            rightFilter);
 
         if (leftState.Confidence <= 0.0f)
         {
@@ -154,24 +194,27 @@ public sealed class GpuMalletTracker : MonoBehaviour
         Vector2 centroid = new Vector2(
             sumX / (float)pixelCount,
             sumY / (float)pixelCount);
-        Vector2 normalizedPosition = CorrectCameraRotation(centroid);
+        Vector2 normalizedPosition = ToNormalizedScreenPosition(centroid);
         filter.Update(
             normalizedPosition,
             timestampMs,
             out Vector2 smoothPosition,
             out Vector2 smoothVelocity);
 
+        Vector3 worldPosition = coordinateMapper.MapToWorld(centroid, pixelCount);
+        Vector3 worldVelocity = coordinateMapper.MapVelocity(
+            new Vector3(smoothVelocity.x, smoothVelocity.y, 0.0f));
         return new MalletState
         {
             MalletId = malletId,
-            Position = new Vector3(smoothPosition.x, smoothPosition.y, 0.0f),
-            Velocity = new Vector3(smoothVelocity.x, smoothVelocity.y, 0.0f),
+            Position = worldPosition,
+            Velocity = worldVelocity,
             Confidence = 1.0f,
             TimestampMs = timestampMs
         };
     }
 
-    private Vector2 CorrectCameraRotation(Vector2 pixelPosition)
+    private Vector2 ToNormalizedScreenPosition(Vector2 pixelPosition)
     {
         float width = Mathf.Max(1.0f, webCam.width);
         float height = Mathf.Max(1.0f, webCam.height);
