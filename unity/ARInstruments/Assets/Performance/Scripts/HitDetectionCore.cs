@@ -1,148 +1,103 @@
-using System;
-using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// A world-space 2D hit region. Audio and visual assets belong to subscribers.
-/// </summary>
-public sealed class InstrumentPad
+public struct DrumHitbox
 {
-    public string PadId;
-    public Rect HitBox2D;
+    public string InstrumentId;
+    public Vector3 Center;
+    public float Radius;
+    public float HitZThreshold;
+    public float LiftZThreshold;
 }
 
-/// <summary>
-/// Module C hit detection. It consumes MalletState and publishes HitEvent.
-/// </summary>
-public sealed class HitDetectionCore : IDisposable
+public sealed class HitDetectionCore : MonoBehaviour
 {
-    public float HitThresholdZ { get; set; } = 0.2f;
-    public float LiftThresholdZ { get; set; } = 0.5f;
-    public float MinVelocityToTrigger { get; set; } = 1.5f;
-    public float MaxVelocityToMap { get; set; } = 15.0f;
+    [SerializeField] private float globalHitForceMultiplier = 1.0f;
 
-    private readonly List<InstrumentPad> activePads = new List<InstrumentPad>();
-    private bool leftIsLocked;
-    private bool rightIsLocked;
-    private bool isSubscribed;
+    private DrumHitbox[] drumNodes;
+    private bool[] isLeftMalletLocked;
+    private bool[] isRightMalletLocked;
 
-    public void RegisterPad(InstrumentPad pad)
+    private void OnEnable()
     {
-        if (pad == null)
+        InitializeDrumKit();
+        GameEventBus.OnMalletsTracked += ProcessHitDetection;
+    }
+
+    private void OnDisable()
+    {
+        GameEventBus.OnMalletsTracked -= ProcessHitDetection;
+    }
+
+    private void InitializeDrumKit()
+    {
+        drumNodes = new DrumHitbox[2];
+        drumNodes[0] = new DrumHitbox
+        {
+            InstrumentId = "Snare_1",
+            Center = new Vector3(-0.5f, 0.0f, 0.5f),
+            Radius = 0.2f,
+            HitZThreshold = 0.1f,
+            LiftZThreshold = 0.15f
+        };
+        drumNodes[1] = new DrumHitbox
+        {
+            InstrumentId = "Cymbal_R",
+            Center = new Vector3(0.5f, 0.0f, 0.6f),
+            Radius = 0.25f,
+            HitZThreshold = 0.12f,
+            LiftZThreshold = 0.18f
+        };
+
+        isLeftMalletLocked = new bool[drumNodes.Length];
+        isRightMalletLocked = new bool[drumNodes.Length];
+    }
+
+    private void ProcessHitDetection(MalletState left, MalletState right)
+    {
+        for (int i = 0; i < drumNodes.Length; i++)
+        {
+            CheckSingleMallet(ref left, i, ref isLeftMalletLocked[i]);
+            CheckSingleMallet(ref right, i, ref isRightMalletLocked[i]);
+        }
+    }
+
+    private void CheckSingleMallet(
+        ref MalletState mallet,
+        int drumIndex,
+        ref bool isLocked)
+    {
+        if (mallet.Confidence < 0.6f)
         {
             return;
         }
 
-        activePads.Add(pad);
-    }
+        ref DrumHitbox node = ref drumNodes[drumIndex];
+        float dx = mallet.Position.x - node.Center.x;
+        float dy = mallet.Position.y - node.Center.y;
+        float squaredDistance = dx * dx + dy * dy;
+        float squaredRadius = node.Radius * node.Radius;
 
-    public void ClearPads()
-    {
-        activePads.Clear();
-    }
-
-    public void Subscribe()
-    {
-        if (!isSubscribed)
+        if (squaredDistance > squaredRadius)
         {
-            GameEventBus.OnMalletsTracked += ProcessMalletStates;
-            isSubscribed = true;
-        }
-    }
-
-    public void Unsubscribe()
-    {
-        if (isSubscribed)
-        {
-            GameEventBus.OnMalletsTracked -= ProcessMalletStates;
-            isSubscribed = false;
-        }
-    }
-
-    public void Dispose()
-    {
-        Unsubscribe();
-        ClearPads();
-        leftIsLocked = false;
-        rightIsLocked = false;
-    }
-
-    public void ProcessMalletStates(MalletState leftState, MalletState rightState)
-    {
-        ProcessMalletState(leftState);
-        ProcessMalletState(rightState);
-    }
-
-    public void ProcessMalletState(MalletState state)
-    {
-        bool isLeft = state.MalletId == 0;
-        bool isLocked = isLeft ? leftIsLocked : rightIsLocked;
-        if (state.Confidence <= 0.0f)
-        {
-            SetLocked(isLeft, false);
+            isLocked = false;
             return;
         }
 
-        float currentZ = state.Position.z;
-        if (isLocked)
+        if (!isLocked && mallet.Position.z >= node.HitZThreshold)
         {
-            if (currentZ > LiftThresholdZ)
-            {
-                SetLocked(isLeft, false);
-            }
-
-            return;
-        }
-
-        float speed = state.Velocity.magnitude;
-        if (currentZ >= HitThresholdZ || speed <= MinVelocityToTrigger)
-        {
-            return;
-        }
-
-        Vector2 position2D = new Vector2(state.Position.x, state.Position.y);
-        for (int i = 0; i < activePads.Count; i++)
-        {
-            InstrumentPad pad = activePads[i];
-            if (pad == null || !pad.HitBox2D.Contains(position2D))
-            {
-                continue;
-            }
-
-            float hitVolume = CalculateVolume(speed);
+            isLocked = true;
             GameEventBus.OnValidHit?.Invoke(new HitEvent
             {
-                InstrumentId = pad.PadId,
-                HitPosition = state.Position,
-                HitForce = hitVolume,
-                MalletId = state.MalletId
+                InstrumentId = node.InstrumentId,
+                HitPosition = mallet.Position,
+                HitForce = Mathf.Clamp01(
+                    mallet.Velocity.magnitude * globalHitForceMultiplier),
+                MalletId = mallet.MalletId
             });
-            SetLocked(isLeft, true);
-            return;
         }
-    }
-
-    private float CalculateVolume(float speed)
-    {
-        float speedRange = MaxVelocityToMap - MinVelocityToTrigger;
-        if (speedRange <= Mathf.Epsilon)
+        else if (isLocked && mallet.Position.z < node.LiftZThreshold)
         {
-            return speed >= MaxVelocityToMap ? 1.0f : 0.0f;
-        }
-
-        return Mathf.Clamp01(
-            (speed - MinVelocityToTrigger) / speedRange);
-    }
-
-    private void SetLocked(bool isLeft, bool value)
-    {
-        if (isLeft)
-        {
-            leftIsLocked = value;
-        }
-        else
-        {
-            rightIsLocked = value;
+            isLocked = false;
         }
     }
 }
