@@ -138,7 +138,7 @@ public sealed class CalibrationManager : MonoBehaviour
 
         if (CurrentStep == CalibrationStep.RestOnDesk)
         {
-            maxArea = Mathf.Max(maxArea, (float)minArea + 1.0f);
+            maxArea = System.Math.Max(maxArea, minArea + 1.0);
             if (tracker != null)
             {
                 tracker.ApplyCalibration(minPixel, maxPixel, minArea, maxArea);
