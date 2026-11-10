@@ -48,8 +48,8 @@ public static class GameEventBus
     /// 每当 CV 模块完成一帧解析，提取出琴槌状态时触发。
     /// C模块基于此进行碰撞检测；B模块基于此渲染光标/AR特效。
     /// </summary>
-    public static Action<MalletState, MalletState> OnMalletsTracked; 
-    
+    public static Action<MalletState, MalletState> OnMalletsTracked;
+
     /// <summary>
     /// 当摄像头追踪丢失时触发，通知 UI 提示用户。
     /// </summary>
