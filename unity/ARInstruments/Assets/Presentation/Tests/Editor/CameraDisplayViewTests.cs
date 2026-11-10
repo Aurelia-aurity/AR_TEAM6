@@ -1,9 +1,11 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -39,18 +41,27 @@ public sealed class CameraDisplayViewTests
         if (camera != null) Object.DestroyImmediate(camera.gameObject);
     }
 
-    [TestCase(0, false, "RGBY")]
-    [TestCase(90, false, "BRYG")]
-    [TestCase(180, false, "YBGR")]
-    [TestCase(270, false, "GYRB")]
-    [TestCase(0, true, "BYRG")]
-    [TestCase(90, true, "RBGY")]
-    [TestCase(180, true, "GRYB")]
-    [TestCase(270, true, "YGBR")]
-    public void RenderedCornersFollowInputOrientation(int rotation, bool flipY, string expected)
+    [TestCase(0, false, false, "RGBY")]
+    [TestCase(90, false, false, "BRYG")]
+    [TestCase(180, false, false, "YBGR")]
+    [TestCase(270, false, false, "GYRB")]
+    [TestCase(0, true, false, "BYRG")]
+    [TestCase(90, true, false, "RBGY")]
+    [TestCase(180, true, false, "GRYB")]
+    [TestCase(270, true, false, "YGBR")]
+    [TestCase(0, false, true, "GRYB")]
+    [TestCase(90, false, true, "RBGY")]
+    [TestCase(180, false, true, "BYRG")]
+    [TestCase(270, false, true, "YGBR")]
+    [TestCase(0, true, true, "YBGR")]
+    [TestCase(90, true, true, "BRYG")]
+    [TestCase(180, true, true, "RGBY")]
+    [TestCase(270, true, true, "GYRB")]
+    public void RenderedCornersFollowInputOrientation(int rotation, bool flipY, bool mirror, string expected)
     {
         Canvas canvas = root.GetComponent<Canvas>();
         RenderTexture target = PrepareCapture(canvas, camera, 1280, 720);
+        view.SetMirrorMode(mirror);
         view.PresentFrame(texture, rotation, flipY);
         Canvas.ForceUpdateCanvases();
         Texture2D screenshot = ReadCapture(camera, target);
@@ -74,7 +85,7 @@ public sealed class CameraDisplayViewTests
                 Color wanted = CornerColor(expected[i]);
                 Assert.That(Vector3.Distance(new Vector3(actual.r, actual.g, actual.b),
                     new Vector3(wanted.r, wanted.g, wanted.b)), Is.LessThan(0.2f),
-                    "Incorrect displayed corner " + i + " for rotation " + rotation + ", flip " + flipY
+                    "Incorrect displayed corner " + i + " for rotation " + rotation + ", flip " + flipY + ", mirror " + mirror
                     + ": got " + actual + ", expected " + wanted);
             }
         }
@@ -142,6 +153,84 @@ public sealed class CameraDisplayViewTests
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Error));
         Assert.That(image.enabled, Is.False);
         Assert.That(image.texture, Is.Null);
+    }
+
+    [Test]
+    public void MirrorMovesOnlyDisplayedOverlayAndLeavesSourceCoordinatesUnchanged()
+    {
+        Canvas canvas = root.GetComponent<Canvas>();
+        RenderTexture target = PrepareCapture(canvas, camera, 1280, 720);
+        GameObject worldObject = new GameObject("Unmodified world object");
+        Vector3 worldPosition = new Vector3(1.2f, -0.7f, 4);
+        worldObject.transform.position = worldPosition;
+        try
+        {
+            view.PresentFrame(texture);
+            RectTransform viewport = root.transform.Find("PreviewFrame/VideoViewport") as RectTransform;
+            Transform overlay = viewport.Find("MirrorRoot/OverlayRoot");
+            RectTransform marker = new GameObject("Test marker", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image))
+                .GetComponent<RectTransform>();
+            marker.SetParent(overlay, false);
+            Vector2 projectedPosition = new Vector2(0.2f, 0.7f);
+            marker.anchorMin = marker.anchorMax = projectedPosition;
+            marker.anchoredPosition = Vector2.zero;
+            marker.sizeDelta = new Vector2(18, 18);
+            marker.GetComponent<Image>().color = Color.magenta;
+            Canvas.ForceUpdateCanvases();
+            Vector2 before = RectTransformUtility.WorldToScreenPoint(camera, marker.position);
+            Vector3 titleBefore = root.transform.Find("Header/Title").position;
+            Vector3[] corners = new Vector3[4];
+            viewport.GetWorldCorners(corners);
+            float left = RectTransformUtility.WorldToScreenPoint(camera, corners[0]).x;
+            float right = RectTransformUtility.WorldToScreenPoint(camera, corners[2]).x;
+
+            view.SetMirrorMode(true);
+            Canvas.ForceUpdateCanvases();
+            Vector2 after = RectTransformUtility.WorldToScreenPoint(camera, marker.position);
+            Assert.That(after.x, Is.EqualTo(left + right - before.x).Within(0.01f));
+            Assert.That(after.y, Is.EqualTo(before.y).Within(0.01f));
+            Assert.That(marker.anchorMin, Is.EqualTo(projectedPosition));
+            Assert.That(marker.anchoredPosition, Is.EqualTo(Vector2.zero));
+            Assert.That(worldObject.transform.position, Is.EqualTo(worldPosition));
+            Assert.That(root.transform.Find("Header/Title").position, Is.EqualTo(titleBefore));
+            Assert.That(texture.GetPixel(0, 0), Is.EqualTo(Color.blue));
+            Texture2D screenshot = ReadCapture(camera, target);
+            Color markerColor = screenshot.GetPixel(Mathf.RoundToInt(after.x), Mathf.RoundToInt(after.y));
+            Object.DestroyImmediate(screenshot);
+            Assert.That(markerColor.r, Is.GreaterThan(0.8f));
+            Assert.That(markerColor.b, Is.GreaterThan(0.8f));
+            Assert.That(markerColor.g, Is.LessThan(0.2f));
+
+            view.SetMirrorMode(false);
+            Canvas.ForceUpdateCanvases();
+            Vector2 restored = RectTransformUtility.WorldToScreenPoint(camera, marker.position);
+            Assert.That(Vector2.Distance(restored, before), Is.LessThan(0.01f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(worldObject);
+            ReleaseCapture(canvas, camera, target);
+        }
+    }
+
+    [Test]
+    public void MirrorSelectionSurvivesInputUpdatesAndRecovery()
+    {
+        Toggle toggle = root.GetComponentInChildren<Toggle>(true);
+        view.SetMirrorMode(true);
+        view.PresentFrame(texture);
+        view.PresentFrame(texture, 90, true);
+        view.ShowError();
+        Assert.That(view.MirrorEnabled, Is.True);
+        Assert.That(toggle.isOn, Is.True);
+        Assert.That(root.transform.Find("PreviewFrame/VideoViewport/MirrorRoot").gameObject.activeSelf, Is.False);
+        view.ShowWaiting();
+        view.PresentFrame(texture);
+        Assert.That(view.MirrorEnabled, Is.True);
+        Assert.That(toggle.isOn, Is.True);
+        Assert.That(root.transform.Find("PreviewFrame/VideoViewport/MirrorRoot").gameObject.activeSelf, Is.True);
+        view.SetMirrorMode(false);
+        Assert.That(toggle.isOn, Is.False);
     }
 
     private static Texture2D CreateCorners(int width, int height)
@@ -214,8 +303,19 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         CameraDisplayView view = Object.FindFirstObjectByType<CameraDisplayView>();
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
-        Assert.That(view.GetComponentInChildren<Toggle>(true).interactable, Is.False);
+        Toggle toggle = view.GetComponentInChildren<Toggle>(true);
+        Assert.That(toggle.interactable, Is.True);
+        Assert.That(view.MirrorEnabled, Is.False);
         CaptureState(view, "streaming");
+        ClickMirrorLabel(view);
+        yield return null;
+        Assert.That(view.MirrorEnabled, Is.True);
+        Assert.That(toggle.isOn, Is.True);
+        CaptureState(view, "mirror-on");
+        ClickMirrorLabel(view);
+        Assert.That(view.MirrorEnabled, Is.False);
+        ClickMirrorLabel(view);
+        Assert.That(view.MirrorEnabled, Is.True);
 
         CameraDisplayPreviewSource source = Object.FindFirstObjectByType<CameraDisplayPreviewSource>();
         SerializedObject settings = new SerializedObject(source);
@@ -224,6 +324,7 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Error));
+        Assert.That(view.MirrorEnabled, Is.True);
         CaptureState(view, "error");
 
         settings.Update();
@@ -232,6 +333,7 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Waiting));
+        Assert.That(toggle.isOn, Is.True);
         CaptureState(view, "waiting");
 
         settings.Update();
@@ -240,14 +342,39 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
+        Assert.That(view.MirrorEnabled, Is.True);
         view.enabled = false;
         yield return null;
         Assert.That(view.GetComponentInChildren<RawImage>(true).texture, Is.Null);
+        Assert.That(toggle.interactable, Is.False);
         view.enabled = true;
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
+        Assert.That(toggle.interactable, Is.True);
+        Assert.That(toggle.isOn, Is.True);
+        ClickMirrorLabel(view);
+        Assert.That(view.MirrorEnabled, Is.False);
+        ClickMirrorLabel(view);
+        Assert.That(view.MirrorEnabled, Is.True);
         yield return new ExitPlayMode();
+    }
+
+    private static void ClickMirrorLabel(CameraDisplayView view)
+    {
+        Canvas.ForceUpdateCanvases();
+        RectTransform label = view.transform.Find("Footer/MirrorToggle/Label") as RectTransform;
+        PointerEventData pointer = new PointerEventData(EventSystem.current)
+        {
+            button = PointerEventData.InputButton.Left,
+            position = RectTransformUtility.WorldToScreenPoint(null, label.TransformPoint(label.rect.center))
+        };
+        List<RaycastResult> hits = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(pointer, hits);
+        Assert.That(hits.Count, Is.GreaterThan(0), "The mirror label must be clickable.");
+        Assert.That(hits[0].gameObject, Is.EqualTo(label.gameObject));
+        Assert.That(ExecuteEvents.ExecuteHierarchy(hits[0].gameObject, pointer, ExecuteEvents.pointerClickHandler),
+            Is.Not.Null);
     }
 
     private static void CaptureState(CameraDisplayView view, string state)

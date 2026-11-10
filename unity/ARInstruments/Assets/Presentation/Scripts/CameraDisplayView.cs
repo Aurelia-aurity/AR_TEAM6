@@ -23,14 +23,19 @@ public sealed class CameraDisplayView : MonoBehaviour
     [SerializeField] private Image statusIndicator;
     [SerializeField] private Text statusText;
     [SerializeField] private Text statusDetail;
+    [SerializeField] private RectTransform mirrorRoot;
+    [SerializeField] private Toggle mirrorToggle;
 
     private int rotation;
+    private bool mirrorEnabled;
 
     public CameraDisplayStatus Status { get; private set; }
+    public bool MirrorEnabled => mirrorEnabled;
 
     private bool HasReferences => cameraImage != null && viewportAspect != null
         && waitingPlaceholder != null && placeholderTitle != null && placeholderHint != null
-        && statusIndicator != null && statusText != null && statusDetail != null;
+        && statusIndicator != null && statusText != null && statusDetail != null
+        && mirrorRoot != null && mirrorToggle != null;
 
     private void Awake()
     {
@@ -47,12 +52,37 @@ public sealed class CameraDisplayView : MonoBehaviour
     private void OnEnable()
     {
         Canvas.willRenderCanvases += RefreshImageSize;
+        if (HasReferences)
+        {
+            mirrorToggle.onValueChanged.AddListener(SetMirrorMode);
+            mirrorToggle.interactable = true;
+            SetMirrorMode(mirrorEnabled);
+        }
     }
 
     private void OnDisable()
     {
         Canvas.willRenderCanvases -= RefreshImageSize;
+        if (mirrorToggle != null)
+        {
+            mirrorToggle.onValueChanged.RemoveListener(SetMirrorMode);
+            mirrorToggle.interactable = false;
+        }
         ShowWaiting();
+    }
+
+    /// <summary>
+    /// Reflects only the displayed video and display-space overlays horizontally.
+    /// Input rotation/vertical correction happens first. World/tracking data is untouched.
+    /// The selection is retained while waiting, on input errors, and across view re-enables.
+    /// </summary>
+    public void SetMirrorMode(bool value)
+    {
+        mirrorEnabled = value;
+        if (mirrorRoot != null)
+            mirrorRoot.localScale = new Vector3(value ? -1 : 1, 1, 1);
+        if (mirrorToggle != null)
+            mirrorToggle.SetIsOnWithoutNotify(value);
     }
 
     private void LateUpdate()
@@ -102,6 +132,7 @@ public sealed class CameraDisplayView : MonoBehaviour
         cameraImage.texture = texture;
         cameraImage.color = Color.white;
         cameraImage.enabled = true;
+        mirrorRoot.gameObject.SetActive(true);
         waitingPlaceholder.SetActive(false);
         Status = CameraDisplayStatus.Streaming;
         statusIndicator.color = new Color32(87, 204, 189, 255);
@@ -143,6 +174,7 @@ public sealed class CameraDisplayView : MonoBehaviour
     {
         cameraImage.enabled = false;
         cameraImage.texture = null;
+        mirrorRoot.gameObject.SetActive(false);
         cameraImage.uvRect = new Rect(0, 0, 1, 1);
         cameraImage.rectTransform.localRotation = Quaternion.identity;
         rotation = 0;
