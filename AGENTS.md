@@ -4,11 +4,11 @@
 
 - Check the current branch, remotes, recent commits, and working tree with `git status --short --branch`, `git remote -v`, and `git log --oneline -5`.
 - Preserve unrelated changes. If they overlap with the task or you find a conflict or unexpected remote history, explain the issue before proceeding with the affected work.
-- Synchronize with the remote when the task requires it. Confirm the target branch and working-tree state before rebasing.
+- Before editing, run `git pull --rebase` to synchronize the current branch with its remote upstream. Confirm the upstream and working-tree state first. If the pull cannot proceed safely, explain the blocker before editing.
 
 ## Branches and commits
 
-- Use a separate branch for each independent change, such as `feature/<name>`, `fix/<name>`, `perf/<name>`, or `docs/<name>`. Start it from the relevant target branch. Check an existing branch's state and ownership before reusing it.
+- Use a separate branch for each independent change, such as `feature/<name>`, `fix/<name>`, `perf/<name>`, or `docs/<name>`. Fetch the remote and explicitly start the new branch from the latest remote commit of its intended merge target. For example, run `git fetch origin` and then `git switch --no-track -c docs/<name> origin/main` for a documentation change targeting `main`. Check an existing branch's state and ownership before reusing it.
 - Commit each complete, verified change as a logical unit. Use Conventional Commits, such as `fix: prevent duplicate hit events`. For analysis or planning requests, leave the working tree and commit history untouched.
 - Before committing, review `git status --short`, `git diff --stat`, and `git diff --check`. Stage only task-related paths and review the staged diff.
 - Keep secrets, certificates, personal configuration, Unity-generated directories, and build artifacts out of commits. Preserve teammates' commits and public branch history. Avoid destructive commands such as `git reset --hard` and `git checkout -- <path>`.
