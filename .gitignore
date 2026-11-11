@@ -46,17 +46,17 @@ sysinfo.txt
 *.VC.db
 *.log
 .vsconfig
-/[Aa]ssets/Plugins/Editor/JetBrains*
+/unity/ARInstruments/Assets/Plugins/Editor/JetBrains*
 *.DotSettings.user
 
 # Android gradle generated files
 .gradle/
-/[Aa]ssets/Plugins/Android/**/*.gradle.backup*
-/[Aa]ssets/Plugins/Android/**/local.properties
+/unity/ARInstruments/Assets/Plugins/Android/**/*.gradle.backup*
+/unity/ARInstruments/Assets/Plugins/Android/**/local.properties
 
 # Builds
-/*_BackUpThisFolder_ButDontShipItWithYourGame/
-/*_BurstDebugInformation_DoNotShip/
+/unity/ARInstruments/*_BackUpThisFolder_ButDontShipItWithYourGame/
+/unity/ARInstruments/*_BurstDebugInformation_DoNotShip/
 *.apk
 *.aab
 *.obb
