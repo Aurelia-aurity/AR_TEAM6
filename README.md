@@ -39,6 +39,7 @@ AR_TEAM6/                         # 현재 저장소 폴더: TEAM6
 - [공통 데이터·이벤트 인터페이스 규약](docs/event_bus_architecture_data_structures_ko.md)
 - [Unity 프로젝트 협업 안내](docs/unity_project_setup_ko.md)
 - [B 작업용 카메라 표시 씬 안내](docs/presentation_camera_display_ko.md)
+- [장구 배치 미리보기](docs/janggu_placement_preview_ko.md)
 
 ## 현재 구현
 
