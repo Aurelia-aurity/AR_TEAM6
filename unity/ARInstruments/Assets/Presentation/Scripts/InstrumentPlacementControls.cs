@@ -38,6 +38,12 @@ public sealed class InstrumentPlacementControls : MonoBehaviour
         initialPosition = instrument.position;
         initialRotation = instrument.rotation;
         initialScale = instrument.localScale;
+        // Include the saved pose so resetting the sliders cannot clamp a position axis.
+        for (int i = 0; i < 3; i++)
+        {
+            positionSliders[i].minValue = Mathf.Min(positionSliders[i].minValue, initialPosition[i]);
+            positionSliders[i].maxValue = Mathf.Max(positionSliders[i].maxValue, initialPosition[i]);
+        }
         ResetPose();
     }
 

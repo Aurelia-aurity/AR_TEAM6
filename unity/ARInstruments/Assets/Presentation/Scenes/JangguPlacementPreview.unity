@@ -2770,6 +2770,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: CameraDisplay
       objectReference: {fileID: 0}
+    - target: {fileID: 8203031333577018393, guid: b4996c2f380d8544caebb453dcb053ec, type: 3}
+      propertyPath: m_ScreenMatchMode
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1014642148652763077, guid: b4996c2f380d8544caebb453dcb053ec, type: 3}
       propertyPath: m_Pivot.x
       value: 0

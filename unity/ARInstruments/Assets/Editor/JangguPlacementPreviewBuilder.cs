@@ -21,6 +21,10 @@ public static class JangguPlacementPreviewBuilder
         CameraDisplayView display = UnityEngine.Object.FindFirstObjectByType<CameraDisplayView>();
         if (display == null) throw new InvalidOperationException("Camera display is missing.");
         Transform canvas = display.transform;
+        // Keep at least the reference canvas size so the pose rows and Reset fit on wide screens.
+        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        PrefabUtility.RecordPrefabInstancePropertyModifications(scaler);
         Text title = canvas.Find("Header/Title").GetComponent<Text>();
         title.text = "JANGGU PLACEMENT";
         PrefabUtility.RecordPrefabInstancePropertyModifications(title);
