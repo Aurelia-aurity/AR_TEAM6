@@ -10,6 +10,7 @@ FR-003의 장구 생성·위치·회전·크기 설정과 FR-004의 합성 구�
 4. `Reset pose`를 누르면 실행 시작 시의 위치·회전·크기로 돌아갑니다.
 5. 기존 `Mirror view`는 영상과 장구·디버그 커서의 표시 결과를 함께 좌우 반전합니다. 왼쪽 설정 패널과 안내 문구는 반전하지 않습니다.
 6. `Cursor debug`로 기존 테스트 커서를 확인할 수 있습니다. 테스트 추적 좌표는 실제 장구 타격 판정을 의미하지 않습니다.
+7. 장구를 선택한 뒤 Inspector의 `HitRegionVibration > Local vibration preview`에서 각 영역의 진동을 시험할 수 있습니다. [영역 ID·진동 효과 안내](janggu_hit_vibration_ko.md)를 참고하세요.
 
 Play 중 조절한 값은 실행을 종료하면 저장되지 않습니다. 기본 배치를 저장하려면 Play를 끈 상태에서 씬의 `Janggu` 오브젝트 Transform을 수정하고 씬을 저장합니다. `Reset pose`는 해당 실행 시작 시의 Transform으로 복귀합니다.
 
