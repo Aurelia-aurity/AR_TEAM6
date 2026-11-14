@@ -31,6 +31,8 @@ public struct HitEvent
 }
 ```
 
+장구의 `InstrumentId`는 현재 GLB의 `extras.zone_id`인 `janggu_head_a_inner`, `janggu_head_a_outer`, `janggu_head_b_inner`, `janggu_head_b_outer`를 사용합니다. C는 같은 ID로 `InstrumentPad.PadId`를 등록합니다. 표시 대상 매핑과 ID 변경 절차는 [장구 타격 영역 진동](janggu_hit_vibration_ko.md)에 정리되어 있습니다.
+
 ## 2. 전역 이벤트 버스 (Global Event Bus)
 
 정적 `Action` 델리게이트를 사용하여 가볍고 지연 없는 메모리 내 이벤트 버스를 구현합니다.

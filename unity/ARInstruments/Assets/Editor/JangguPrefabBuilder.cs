@@ -80,6 +80,7 @@ public static class JangguPrefabBuilder
             }
             if ((bounds.size - new Vector3(0.53f, 0.45f, 0.45f)).sqrMagnitude > 0.000001f)
                 throw new InvalidOperationException("Unexpected model dimensions: " + bounds.size);
+            ConfigureHitFeedback(root);
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath, out bool success);
             if (!success) throw new InvalidOperationException("Prefab save failed.");
             AssetDatabase.SaveAssets();
@@ -87,5 +88,30 @@ public static class JangguPrefabBuilder
                 + "; renderers=" + renderers.Length + "; four strike regions preserved; colliders=0.");
         }
         finally { UnityEngine.Object.DestroyImmediate(root); }
+    }
+
+    // Defaults for newly authored prefabs. Existing mappings are edited on the prefab itself.
+    public static void ConfigureHitFeedback(GameObject root)
+    {
+        if (root.GetComponent<HitRegionVibration>() != null) return;
+        var definitions = new[]
+        {
+            (id: "janggu_head_a_inner", node: "Head_A_Inner", normal: Vector3.right),
+            (id: "janggu_head_a_outer", node: "Head_A_Outer", normal: Vector3.right),
+            (id: "janggu_head_b_inner", node: "Head_B_Inner", normal: Vector3.left),
+            (id: "janggu_head_b_outer", node: "Head_B_Outer", normal: Vector3.left)
+        };
+        var nodes = root.GetComponentsInChildren<Transform>(true);
+        var settings = new SerializedObject(root.AddComponent<HitRegionVibration>());
+        var regions = settings.FindProperty("regions");
+        regions.arraySize = definitions.Length;
+        for (int i = 0; i < definitions.Length; i++)
+        {
+            var region = regions.GetArrayElementAtIndex(i);
+            region.FindPropertyRelative("RegionId").stringValue = definitions[i].id;
+            region.FindPropertyRelative("Target").objectReferenceValue = nodes.Single(t => t.name == definitions[i].node);
+            region.FindPropertyRelative("LocalNormal").vector3Value = definitions[i].normal;
+        }
+        settings.ApplyModifiedPropertiesWithoutUndo();
     }
 }
