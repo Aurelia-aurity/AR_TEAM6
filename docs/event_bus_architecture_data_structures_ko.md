@@ -82,11 +82,68 @@ public static class GameEventBus
 }
 ```
 
-## 3. 모듈별 개발 범위 및 책임 (Module Responsibilities)
+## 3. 카메라 영상·상태 계약
+
+이 절은 실제 입력 연결의 2번 작업에서 확정한 추가 계약입니다. 기존 `MalletState`, `HitEvent` 및 추적 이벤트는 유지합니다. 구현은 `Shared/Scripts/CameraFrameData.cs`, `CameraInputStateData.cs`, `GameEventBus.cs`를 기준으로 합니다. A 발행기·B 연결 컴포넌트·씬 구성은 후속 작업입니다.
+
+### 데이터와 식별
+
+| 데이터 | 필드 | 의미 |
+| --- | --- | --- |
+| `CameraFrameData` | `string CameraId`, `Guid SessionId` | 논리 카메라 ID와 시작 시도 식별자 |
+| | `Texture Texture` | A 소유의 사용 가능한 영상 Texture 참조 |
+| | `int ClockwiseRotation`, `bool VerticallyMirrored` | 시계 방향 회전각(0/90/180/270), 원본 상하 반전 보정 |
+| | `double ReceivedAtMs` | A가 새 프레임을 확인한 시각 |
+| `CameraInputStateData` | `string CameraId`, `Guid SessionId` | 영상과 동일한 식별자 |
+| | `string DeviceName` | 선택된 실제 장치 이름. 선택 전에는 빈 문자열 |
+| | `CameraInputState State`, `double ChangedAtMs` | 입력 상태와 상태 변경 시각 |
+| | `CameraInputError Error`, `string Description` | 기계 판독용 오류와 선택적 진단 설명 |
+
+- `CameraId`는 Inspector에서 지정할 비어 있지 않은 논리 ID(예: `primary`)입니다. 대소문자를 구분하며, 동시에 동작하는 발행기마다 고유해야 합니다. 실제 장치 이름과 분리합니다.
+- A는 실패한 시도를 포함해 시작 시도마다 `Guid.NewGuid()`로 새 `SessionId`를 만들고, 해당 시도의 모든 영상·상태에 같은 값을 사용합니다. `Guid.Empty`는 유효한 세션이 아닙니다. GUID는 순서 비교용 숫자가 아닙니다.
+- 두 시각은 `Time.realtimeSinceStartupAsDouble * 1000` 기준 밀리초이며, 실제 촬영 시각이나 UTC가 아닙니다. 수신 시각으로 센서 촬영 지연을 계산하지 않습니다.
+- 상하 반전은 Texture 공간에서 먼저 보정하고, 그 뒤 시계 방향으로 회전합니다. B의 사용자 거울 모드는 그와 별개이며 추적 좌표를 변경하지 않습니다.
+- Texture는 변경 가능한 실시간 참조이며 프레임 이미지의 복사본이 아닙니다. B는 표시하는 동안만 참조하며 생성·촬영·정지·해제하지 않습니다.
+
+### 상태와 발행 순서
+
+| 상태 | 의미 | B의 후속 연결 |
+| --- | --- | --- |
+| `Waiting` | 새 시작 시도, 첫 사용 가능 프레임 대기 | `ShowWaiting()` |
+| `Streaming` | 실제 사용 가능 프레임을 수신함 | 다음 영상 이벤트에서 `PresentFrame()` |
+| `Error` | 장치 없음, 시작 실패 또는 수신 중단 | `ShowError()` |
+| `Stopped` | 명시적 종료·비활성화 | `ShowWaiting()` |
+
+`CameraInputError`는 `None`, `DeviceNotFound`, `StartFailed`, `FrameTimeout`입니다. 정상 상태는 `None`을 사용합니다. `Description`은 진단용이며 B의 동작 분기는 문자열 대신 상태·오류 코드로 결정합니다.
+
+1. A는 새 세션의 `Waiting`을 먼저 발행합니다. 첫 프레임 수신 시 `Streaming` 상태를 발행한 뒤 해당 영상 이벤트를 보냅니다. 이후 새 프레임마다 영상 이벤트를 보내며 동일 상태를 매 프레임 반복 발행하지 않습니다.
+2. 오류·종료 시 상태를 먼저 동기 발행하여 B가 이전 영상과 오버레이를 제거하게 한 뒤 A가 Texture를 정지·해제합니다. 종료된 세션에서는 프레임을 발행하지 않습니다. 재시작은 새 세션의 `Waiting`부터 시작합니다.
+3. 영상 수신은 채 검출, 공간 보정, GPU 추적 분석 성공 여부와 독립적입니다. 채가 안 보인다는 이유로 영상 입력을 `Error`로 바꾸지 않습니다.
+4. 발행·구독·조회는 Unity 메인 스레드에서만 수행합니다. A는 이전 세션의 지연 콜백을 발행 전에 버리고, B도 현재 `CameraId`·`SessionId`와 일치하는 영상만 사용합니다. 이벤트 버스 자체는 입력 유효성 검사, 세션 순서 판정, 타임아웃 감지나 재시도를 수행하지 않습니다.
+
+### 이벤트 버스와 늦은 구독
+
+```csharp
+// Subscribe with +=, unsubscribe with -=.
+public static event Action<CameraFrameData> OnCameraFrameReceived;
+public static event Action<CameraInputStateData> OnCameraInputStateChanged;
+
+public static void PublishCameraFrame(CameraFrameData frame);
+public static void PublishCameraInputState(CameraInputStateData state);
+public static bool TryGetCameraInputState(string cameraId, out CameraInputStateData state);
+```
+
+새 이벤트는 `event Action<T>`로 제공하며 A는 반드시 발행 메서드를 사용합니다. 기존 공개 `Action`들은 변경하지 않습니다. 상태는 카메라 ID별로 저장한 뒤 구독자에게 동기 전달합니다. 조회는 마지막으로 발행된 상태의 복사본을 반환하며 추가 이벤트를 발생시키지 않습니다. Texture나 영상 데이터는 보관·재전송하지 않습니다.
+
+B는 `OnEnable`에서 구독한 다음 지정 ID의 상태를 조회합니다. 상태가 없으면 대기하고, 저장된 상태가 `Streaming`이어도 새 프레임을 받기 전에는 영상을 표시하지 않습니다. `OnDisable`에서 구독을 해제하고 표시 중인 참조를 제거합니다. 오류·중지 상태는 늦은 구독자를 위해 남겨두되, 새 상태가 덮어씁니다. Play 시작의 `SubsystemRegistration`에서 카메라 상태 저장소와 새 카메라 이벤트 구독을 초기화합니다.
+
+수신 중단의 제한 시간, 재시작 실행 방법, 실제 장치 선택 설정의 연결은 3번 이후 작업에서 구현합니다. 이 계약은 깊이 추정·공간 정렬·타격 판정의 완료를 의미하지 않습니다.
+
+## 4. 모듈별 개발 범위 및 책임 (Module Responsibilities)
 
 실패 발행자는 `PublishTrackingLost(id, observationTimestampMs)`를 호출합니다. 시각은 같은 관측의 `MalletState.TimestampMs`와 동일한 `Time.realtimeSinceStartupAsDouble * 1000` 기준이며, 지연된 콜백의 현재 시각으로 바꾸지 않습니다. 기존 `OnTrackingLost(int)` 시그니처는 유지합니다. B의 커서는 `OnTrackingLostAt`에 순서 검사를 적용하며 시각 없는 호환 알림을 상태 변경 근거로 사용하지 않습니다.
 
-- **Module A (CV — 사용자가 현재 담당):** 카메라 영상을 입력받아 `MalletState`를 계산하고, 매 프레임 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`를 호출하는 역할만 담당합니다. CV 코드에는 어떠한 충돌 감지 코드도 **작성하지 마세요.**
+- **Module A (CV — 사용자가 현재 담당):** 위 계약의 영상·입력 상태를 발행하고, 추적 분석 결과는 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`로 전달합니다. CV 코드에는 어떠한 충돌 감지 코드도 **작성하지 마세요.**
 
 - **Module B (AR/UI):** 이벤트 버스를 구독하는 역할만 담당합니다. `OnMalletsTracked`를 수신하여 화면의 커서 위치를 갱신하고, `OnValidHit`를 수신하여 시각 효과를 재생합니다.
 
