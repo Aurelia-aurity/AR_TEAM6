@@ -119,21 +119,7 @@ public sealed class HitDetectionCore : IDisposable
         mallet.PreviousSample = state;
         if (mallet.IsWaitingForLift)
         {
-            Transform surface = mallet.LockedPad.HitSurface;
-            float liftPosition = state.Position.z;
-            float liftThreshold = LiftThresholdZ;
-            if (surface)
-            {
-                // 타격면 기준 거리
-                liftPosition = Vector3.Dot(state.Position - surface.position, surface.forward);
-                liftThreshold = LiftThresholdZ - HitThresholdZ;
-            }
-
-            if (liftPosition > liftThreshold)
-            {
-                mallet.Unlock();
-            }
-
+            TryUnlockAfterLift(mallet, state.Position);
             return;
         }
 
@@ -172,13 +158,34 @@ public sealed class HitDetectionCore : IDisposable
     }
 
     /// <summary>
+    /// Releases the strike lock once the tip has retreated far enough.
+    /// </summary>
+    private void TryUnlockAfterLift(MalletHitState mallet, Vector3 tipPosition)
+    {
+        Transform surface = mallet.LockedPad.HitSurface;
+        float liftPosition = tipPosition.z;
+        float liftThreshold = LiftThresholdZ;
+        if (surface)
+        {
+            // 타격면 기준 거리
+            liftPosition = Vector3.Dot(tipPosition - surface.position, surface.forward);
+            liftThreshold = LiftThresholdZ - HitThresholdZ;
+        }
+
+        if (liftPosition > liftThreshold)
+        {
+            mallet.Unlock();
+        }
+    }
+
+    /// <summary>
     /// Checks the inward speed and determines where the movement segment crosses the pad within its bounds.
     /// </summary>
     private bool TryGetContact(InstrumentPad pad, Vector3 previousWorld, Vector3 currentWorld, Vector3 velocity,
         out Vector3 contact, out float inwardSpeed)
     {
         Transform surface = pad.HitSurface;
-        inwardSpeed = Vector3.Dot(velocity, surface ? -surface.forward : Vector3.back);
+        inwardSpeed = CalculateInwardSpeed(velocity, surface);
         contact = default;
         bool hasEnoughInwardSpeed = inwardSpeed > MinVelocityToTrigger;
         if (!hasEnoughInwardSpeed)
@@ -189,21 +196,55 @@ public sealed class HitDetectionCore : IDisposable
         Vector3 previous = surface ? surface.InverseTransformPoint(previousWorld) : previousWorld;
         Vector3 current = surface ? surface.InverseTransformPoint(currentWorld) : currentWorld;
         float planeZ = surface ? 0f : HitThresholdZ;
-        bool crossesPlaneFromFront = previous.z > planeZ && current.z <= planeZ;
-        if (!crossesPlaneFromFront)
+        // 채 끝점이 타격면 앞에서 출발해 면에 닿거나 통과했는지 확인한다.
+        if (!TryGetCrossingFraction(previous.z, current.z, planeZ, out float fraction))
         {
             return false;
         }
 
-        float fraction = (previous.z - planeZ) / (previous.z - current.z);
-        Vector3 localContact = Vector3.Lerp(previous, current, fraction);
-        if (!pad.HitBox2D.Contains(new Vector2(localContact.x, localContact.y)))
+        // 타격면에 닿은 지점이 패드 범위 안인지 확인한다.
+        if (!IsContactWithinPad(pad.HitBox2D, previous, current, fraction))
         {
             return false;
         }
 
         contact = Vector3.Lerp(previousWorld, currentWorld, fraction);
         return true;
+    }
+
+    /// <summary>
+    /// Returns the velocity component directed into the strike surface.
+    /// </summary>
+    private static float CalculateInwardSpeed(Vector3 velocity, Transform surface)
+    {
+        Vector3 inwardDirection = surface ? -surface.forward : Vector3.back;
+        return Vector3.Dot(velocity, inwardDirection);
+    }
+
+    /// <summary>
+    /// Finds where a movement segment reaches the plane from the front.
+    /// </summary>
+    private static bool TryGetCrossingFraction(float previousZ, float currentZ, float planeZ, out float fraction)
+    {
+        fraction = default;
+        bool crossesPlaneFromFront = previousZ > planeZ && currentZ <= planeZ;
+        if (!crossesPlaneFromFront)
+        {
+            return false;
+        }
+
+        // 두 샘플 사이에서 타격면에 닿는 비율
+        fraction = (previousZ - planeZ) / (previousZ - currentZ);
+        return true;
+    }
+
+    /// <summary>
+    /// Checks whether the intersection lies inside the pad's XY bounds.
+    /// </summary>
+    private static bool IsContactWithinPad(Rect bounds, Vector3 previous, Vector3 current, float fraction)
+    {
+        Vector3 contact = Vector3.Lerp(previous, current, fraction);
+        return bounds.Contains(new Vector2(contact.x, contact.y));
     }
 
     /// <summary>
