@@ -21,6 +21,7 @@ public sealed class HitDetectionCore : IDisposable
     public float LiftThresholdZ { get; set; } = 0.5f;
     public float MinVelocityToTrigger { get; set; } = 1.5f;
     public float MaxVelocityToMap { get; set; } = 15.0f;
+    public double MaxTrackingGapMs { get; set; } = 100.0;
 
     private readonly List<InstrumentPad> activePads = new List<InstrumentPad>();
     private readonly MalletHitState leftMallet = new MalletHitState();
@@ -42,8 +43,8 @@ public sealed class HitDetectionCore : IDisposable
         activePads.Clear();
         leftMallet.Unlock();
         rightMallet.Unlock();
-        leftMallet.PreviousPosition = null;
-        rightMallet.PreviousPosition = null;
+        leftMallet.ResetTracking();
+        rightMallet.ResetTracking();
     }
 
     public void Subscribe()
@@ -61,8 +62,8 @@ public sealed class HitDetectionCore : IDisposable
         {
             GameEventBus.OnMalletsTracked -= ProcessMalletStates;
             isSubscribed = false;
-            leftMallet.PreviousPosition = null;
-            rightMallet.PreviousPosition = null;
+            leftMallet.ResetTracking();
+            rightMallet.ResetTracking();
         }
     }
 
@@ -81,15 +82,20 @@ public sealed class HitDetectionCore : IDisposable
     public void ProcessMalletState(MalletState state)
     {
         MalletHitState mallet = state.MalletId == 0 ? leftMallet : rightMallet;
-        if (state.Confidence <= 0.0f)
+        if (!mallet.TryAcceptTimestamp(state.TimestampMs))
         {
-            // 추적이 재개되면 새 이동 구간부터 판정한다.
-            mallet.PreviousPosition = null;
             return;
         }
 
-        Vector3? previous = mallet.PreviousPosition;
-        mallet.PreviousPosition = state.Position;
+        if (state.Confidence <= 0.0f)
+        {
+            // 추적이 재개되면 새 이동 구간부터 판정한다.
+            mallet.PreviousSample = null;
+            return;
+        }
+
+        MalletState? previous = mallet.PreviousSample;
+        mallet.PreviousSample = state;
         if (mallet.IsWaitingForLift)
         {
             Transform surface = mallet.LockedPad.HitSurface;
@@ -115,10 +121,18 @@ public sealed class HitDetectionCore : IDisposable
             return;
         }
 
+        double elapsedMs = state.TimestampMs - previous.Value.TimestampMs;
+        if (elapsedMs > MaxTrackingGapMs)
+        {
+            return;
+        }
+
+        Vector3 previousPosition = previous.Value.Position;
+        Vector3 velocity = (state.Position - previousPosition) / (float)(elapsedMs / 1000.0);
         for (int i = 0; i < activePads.Count; i++)
         {
             InstrumentPad pad = activePads[i];
-            if (pad == null || !TryGetContact(pad, previous.Value, state, out Vector3 contact, out float inwardSpeed))
+            if (pad == null || !TryGetContact(pad, previousPosition, state.Position, velocity, out Vector3 contact, out float inwardSpeed))
             {
                 continue;
             }
@@ -136,11 +150,11 @@ public sealed class HitDetectionCore : IDisposable
         }
     }
 
-    private bool TryGetContact(InstrumentPad pad, Vector3 previousWorld, MalletState state,
+    private bool TryGetContact(InstrumentPad pad, Vector3 previousWorld, Vector3 currentWorld, Vector3 velocity,
         out Vector3 contact, out float inwardSpeed)
     {
         Transform surface = pad.HitSurface;
-        inwardSpeed = Vector3.Dot(state.Velocity, surface ? -surface.forward : Vector3.back);
+        inwardSpeed = Vector3.Dot(velocity, surface ? -surface.forward : Vector3.back);
         contact = default;
         bool hasEnoughInwardSpeed = inwardSpeed > MinVelocityToTrigger;
         if (!hasEnoughInwardSpeed)
@@ -149,7 +163,7 @@ public sealed class HitDetectionCore : IDisposable
         }
 
         Vector3 previous = surface ? surface.InverseTransformPoint(previousWorld) : previousWorld;
-        Vector3 current = surface ? surface.InverseTransformPoint(state.Position) : state.Position;
+        Vector3 current = surface ? surface.InverseTransformPoint(currentWorld) : currentWorld;
         float planeZ = surface ? 0f : HitThresholdZ;
         bool crossesPlaneFromFront = previous.z > planeZ && current.z <= planeZ;
         if (!crossesPlaneFromFront)
@@ -164,7 +178,7 @@ public sealed class HitDetectionCore : IDisposable
             return false;
         }
 
-        contact = Vector3.Lerp(previousWorld, state.Position, fraction);
+        contact = Vector3.Lerp(previousWorld, currentWorld, fraction);
         return true;
     }
 
@@ -182,9 +196,29 @@ public sealed class HitDetectionCore : IDisposable
 
     private sealed class MalletHitState
     {
-        public Vector3? PreviousPosition { get; set; }
+        public MalletState? PreviousSample { get; set; }
+        private double? latestTimestampMs;
         public InstrumentPad LockedPad { get; private set; }
         public bool IsWaitingForLift => LockedPad != null;
+
+        public bool TryAcceptTimestamp(double timestampMs)
+        {
+            bool hasInvalidTimestamp = double.IsNaN(timestampMs) || double.IsInfinity(timestampMs);
+            bool isOutOfOrder = timestampMs <= latestTimestampMs;
+            if (hasInvalidTimestamp || isOutOfOrder)
+            {
+                return false;
+            }
+
+            latestTimestampMs = timestampMs;
+            return true;
+        }
+
+        public void ResetTracking()
+        {
+            PreviousSample = null;
+            latestTimestampMs = null;
+        }
 
         public void LockUntilLift(InstrumentPad pad)
         {
