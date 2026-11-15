@@ -28,6 +28,9 @@ public sealed class HitDetectionCore : IDisposable
     private readonly MalletHitState rightMallet = new MalletHitState();
     private bool isSubscribed;
 
+    /// <summary>
+    /// Adds a strike surface to check for hits.
+    /// </summary>
     public void RegisterPad(InstrumentPad pad)
     {
         if (pad == null)
@@ -38,6 +41,9 @@ public sealed class HitDetectionCore : IDisposable
         activePads.Add(pad);
     }
 
+    /// <summary>
+    /// Removes all registered pads and resets both mallets.
+    /// </summary>
     public void ClearPads()
     {
         activePads.Clear();
@@ -47,6 +53,9 @@ public sealed class HitDetectionCore : IDisposable
         rightMallet.ResetTracking();
     }
 
+    /// <summary>
+    /// Subscribes to tracked mallet samples.
+    /// </summary>
     public void Subscribe()
     {
         if (!isSubscribed)
@@ -56,6 +65,9 @@ public sealed class HitDetectionCore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops receiving tracked samples and clears sample history.
+    /// </summary>
     public void Unsubscribe()
     {
         if (isSubscribed)
@@ -67,18 +79,27 @@ public sealed class HitDetectionCore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Unsubscribes from tracking and clears pads and mallet state.
+    /// </summary>
     public void Dispose()
     {
         Unsubscribe();
         ClearPads();
     }
 
+    /// <summary>
+    /// Processes the tracking samples for both mallets independently.
+    /// </summary>
     public void ProcessMalletStates(MalletState leftState, MalletState rightState)
     {
         ProcessMalletState(leftState);
         ProcessMalletState(rightState);
     }
 
+    /// <summary>
+    /// Updates one mallet and publishes a hit when consecutive samples cross a registered surface at sufficient speed.
+    /// </summary>
     public void ProcessMalletState(MalletState state)
     {
         MalletHitState mallet = state.MalletId == 0 ? leftMallet : rightMallet;
@@ -150,6 +171,9 @@ public sealed class HitDetectionCore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Checks the inward speed and determines where the movement segment crosses the pad within its bounds.
+    /// </summary>
     private bool TryGetContact(InstrumentPad pad, Vector3 previousWorld, Vector3 currentWorld, Vector3 velocity,
         out Vector3 contact, out float inwardSpeed)
     {
@@ -182,6 +206,9 @@ public sealed class HitDetectionCore : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Maps the inward strike speed to a hit strength between 0 and 1.
+    /// </summary>
     private float CalculateNormalizedHitStrength(float speed)
     {
         float speedRange = MaxVelocityToMap - MinVelocityToTrigger;
@@ -194,6 +221,9 @@ public sealed class HitDetectionCore : IDisposable
             (speed - MinVelocityToTrigger) / speedRange);
     }
 
+    /// <summary>
+    /// Stores the tracking history and strike lock for one mallet.
+    /// </summary>
     private sealed class MalletHitState
     {
         public MalletState? PreviousSample { get; set; }
@@ -201,6 +231,9 @@ public sealed class HitDetectionCore : IDisposable
         public InstrumentPad LockedPad { get; private set; }
         public bool IsWaitingForLift => LockedPad != null;
 
+        /// <summary>
+        /// Records a finite timestamp if it is strictly newer than the last accepted timestamp.
+        /// </summary>
         public bool TryAcceptTimestamp(double timestampMs)
         {
             bool hasInvalidTimestamp = double.IsNaN(timestampMs) || double.IsInfinity(timestampMs);
@@ -214,17 +247,26 @@ public sealed class HitDetectionCore : IDisposable
             return true;
         }
 
+        /// <summary>
+        /// Clears the stored sample and timestamp used for tracking.
+        /// </summary>
         public void ResetTracking()
         {
             PreviousSample = null;
             latestTimestampMs = null;
         }
 
+        /// <summary>
+        /// Locks the mallet against further hits until it retreats from the struck pad.
+        /// </summary>
         public void LockUntilLift(InstrumentPad pad)
         {
             LockedPad = pad;
         }
 
+        /// <summary>
+        /// Releases the strike lock so the mallet can hit again.
+        /// </summary>
         public void Unlock()
         {
             LockedPad = null;
