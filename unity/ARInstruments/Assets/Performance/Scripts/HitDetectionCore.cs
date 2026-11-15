@@ -177,9 +177,9 @@ public sealed class HitDetectionCore : IDisposable
             return;
         }
 
-        // 타격면 기준 거리
-        float liftPosition = Vector3.Dot(tipPosition - surface.position, surface.forward);
-        if (liftPosition > RearmDistance)
+        // 타격면 기준 거리. 면 앞쪽이 양수다.
+        float liftDistance = Vector3.Dot(tipPosition - surface.position, surface.forward);
+        if (liftDistance > RearmDistance)
         {
             mallet.Unlock();
         }
