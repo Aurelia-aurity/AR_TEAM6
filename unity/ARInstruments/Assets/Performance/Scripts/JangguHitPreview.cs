@@ -106,12 +106,12 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         GameEventBus.OnValidHit -= CountHit;
         core?.Dispose();
         core = null;
-        if (padA != null)
+        if (padA != null && padA.HitSurface)
         {
             Destroy(padA.HitSurface.gameObject);
         }
 
-        if (padB != null)
+        if (padB != null && padB.HitSurface)
         {
             Destroy(padB.HitSurface.gameObject);
         }
