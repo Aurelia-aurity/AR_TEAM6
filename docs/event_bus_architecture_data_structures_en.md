@@ -55,6 +55,15 @@ public static class GameEventBus
     /// </summary>
     public static Action<int> OnTrackingLost; // int 为 MalletId
 
+    // Ordered consumers use the failed observation's TimestampMs.
+    public static Action<int, double> OnTrackingLostAt;
+
+    public static void PublishTrackingLost(int malletId, double timestampMs)
+    {
+        OnTrackingLostAt?.Invoke(malletId, timestampMs);
+        OnTrackingLost?.Invoke(malletId); // Preserve existing subscribers.
+    }
+
     // A -> calibration: raw pixel centroid and color-mask area before world mapping.
     public static Action<RawMalletSample> OnRawMalletSample;
 
@@ -70,8 +79,48 @@ public static class GameEventBus
 }
 ```
 
-## 3. 开发边界与职责 (Module Responsibilities)
+## 3. Camera frame and input state contract (step 2)
 
-*   **Module A (CV - 用户当前负责):** 只负责消费摄像头画面，计算 `MalletState`，并在每帧调用 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`。**不要**在 CV 代码里写任何碰撞检测代码。
+This additive contract leaves `MalletState`, `HitEvent` and existing tracking events unchanged. Sources: `Shared/Scripts/CameraFrameData.cs`, `CameraInputStateData.cs`, and `GameEventBus.cs`. See also the [Korean contract](event_bus_architecture_data_structures_ko.md). Publisher integration, B's adapter and scene wiring are subsequent steps.
+
+| Payload | Fields |
+| --- | --- |
+| `CameraFrameData` | `string CameraId`, `Guid SessionId`, `Texture Texture`, `int ClockwiseRotation`, `bool VerticallyMirrored`, `double ReceivedAtMs` |
+| `CameraInputStateData` | `string CameraId`, `Guid SessionId`, `string DeviceName`, `CameraInputState State`, `double ChangedAtMs`, `CameraInputError Error`, `string Description` |
+
+- `CameraId` is a nonempty, case-sensitive logical Inspector ID such as `primary`, unique among active publishers. It is independent of the physical device name. `DeviceName` is the selected device name, empty before selection.
+- A creates a fresh `Guid.NewGuid()` for each start attempt, including failed attempts. All events for that attempt share the ID; `Guid.Empty` is invalid. GUIDs identify sessions, not their chronological order.
+- Both times use `Time.realtimeSinceStartupAsDouble * 1000` in milliseconds. `ReceivedAtMs` is when A observes a new frame; `ChangedAtMs` is when the input state changes. Neither is sensor capture time or UTC.
+- Rotation is clockwise, restricted to 0/90/180/270 degrees. Apply vertical correction in texture space before rotation. B's user mirror mode is separate and does not change tracking coordinates.
+- The texture is a borrowed, mutable live reference, not a copied frame image. A owns creation, capture, stopping and destruction. B retains it only for display.
+
+| State | Meaning | B adapter behavior |
+| --- | --- | --- |
+| `Waiting` | Starting; awaiting first usable frame | `ShowWaiting()` |
+| `Streaming` | A usable frame has actually arrived | `PresentFrame()` on the next frame event |
+| `Error` | Device missing, start failure or frame timeout | `ShowError()` |
+| `Stopped` | Explicit stop or disable | `ShowWaiting()` |
+
+`CameraInputError` values are `None`, `DeviceNotFound`, `StartFailed`, and `FrameTimeout`. Non-error states use `None`. `Description` is optional diagnostic text; consumers branch on state/error codes, not message strings.
+
+A publishes `Waiting` for each new session. On its first usable frame, publish `Streaming` before publishing that frame. Publish frames for every newly received image, independently of mallet detection, calibration or GPU analysis success. Publish state on transitions rather than on every frame. Publish error/stop synchronously before stopping or destroying the texture so B can clear its image and overlays. Do not publish frames for a terminated session. Restart begins with a new session's `Waiting`.
+
+```csharp
+public static event Action<CameraFrameData> OnCameraFrameReceived;
+public static event Action<CameraInputStateData> OnCameraInputStateChanged;
+public static void PublishCameraFrame(CameraFrameData frame);
+public static void PublishCameraInputState(CameraInputStateData state);
+public static bool TryGetCameraInputState(string cameraId, out CameraInputStateData state);
+```
+
+All calls and subscriptions run on Unity's main thread. New events use `event Action<T>` so publishers must use the methods; legacy public Actions remain unchanged. State is cached by logical camera ID before synchronous notification. Query returns a copy without broadcasting a replay. Frames/textures are never cached or replayed. The bus does not validate payloads, arbitrate session ordering, detect timeouts, or retry. A must discard obsolete-session callbacks before publishing; B must match incoming frames to its camera and current session.
+
+B subscribes in `OnEnable`, then queries its camera state. If absent, wait; even cached `Streaming` requires a new frame before showing video. B unsubscribes and clears its displayed reference in `OnDisable`. Error/stopped states remain available to late subscribers until replaced. `SubsystemRegistration` clears the camera state cache and camera event subscriptions on Play startup. Timeout thresholds and restart execution belong to subsequent steps. This contract does not establish spatial alignment, depth estimation or hit correctness.
+
+## 4. 开发边界与职责 (Module Responsibilities)
+
+Failure publishers call `PublishTrackingLost(id, observationTimestampMs)`. The timestamp uses the same `Time.realtimeSinceStartupAsDouble * 1000` clock as the observation's `MalletState.TimestampMs`; do not substitute callback arrival time. The existing `OnTrackingLost(int)` signature remains available. B's cursors order `OnTrackingLostAt` against tracked samples and do not let an unversioned legacy notification override ordered state.
+
+*   **Module A (CV):** Publishes frames and input state under the contract above, and sends tracking analysis through `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`. Do not implement collision detection in CV code.
 *   **Module B (AR/UI):** 只负责监听总线。监听 `OnMalletsTracked` 更新画面上的光标位置；监听 `OnValidHit` 播放视觉特效。
 *   **Module C (Logic/Audio):** 监听 `OnMalletsTracked`。维护一个虚拟乐器的 Collider 列表。计算上一帧和当前帧的线段是否穿过 Collider（射线检测）。如果穿过，计算力度，并调用 `GameEventBus.OnValidHit?.Invoke(hitData);`。

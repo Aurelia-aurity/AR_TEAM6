@@ -11,6 +11,20 @@
 [Uu]ser[Ss]ettings/
 [Mm]emoryCaptures/
 [Rr]ecordings/
+.utmp/
+.dirstamp
+mono_crash.*
+tmpinst-dir.stamp
+
+# Unity crash recovery.
+/unity/ARInstruments/Assets/_Recovery/
+/unity/ARInstruments/Assets/_Recovery.meta
+
+# Unity3D generated file on crash reports
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
 
 # IDE and local project files.
 .vs/
@@ -20,6 +34,9 @@
 *.sln
 *.slnx
 *.user
+*.suo
+*.userprefs
+*.tmp
 *.pidb
 *.booproj
 *.svd
@@ -28,9 +45,29 @@
 *.opendb
 *.VC.db
 *.log
+.vsconfig
+/unity/ARInstruments/Assets/Plugins/Editor/JetBrains*
+*.DotSettings.user
+
+# Android gradle generated files
+.gradle/
+/unity/ARInstruments/Assets/Plugins/Android/**/*.gradle.backup*
+/unity/ARInstruments/Assets/Plugins/Android/**/local.properties
+
+# Builds
+/unity/ARInstruments/*_BackUpThisFolder_ButDontShipItWithYourGame/
+/unity/ARInstruments/*_BurstDebugInformation_DoNotShip/
+*.apk
+*.aab
+*.obb
+*.unitypackage
+*.unitypackage.meta
+*.app
 
 # OS and source asset backups.
 .DS_Store
 Thumbs.db
 *.blend1
+*.blend1.meta
 *.blend2
+*.blend2.meta

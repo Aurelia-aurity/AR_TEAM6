@@ -1,0 +1,7 @@
+{
+    "name": "ARInstruments.Performance.Tests",
+    "references": ["ARInstruments.Performance", "ARInstruments.Shared"],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"],
+    "autoReferenced": false
+}

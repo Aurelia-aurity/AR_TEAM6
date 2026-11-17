@@ -11,6 +11,10 @@ public sealed class GpuMalletTracker : MonoBehaviour
     public ComputeShader trackerShader;
     public RawImage cameraDebugger;
 
+    [Header("Camera input")]
+    [Tooltip("Exact device name from Log Available Camera Devices. Empty keeps automatic selection. Applied on startup.")]
+    public string cameraDeviceName = "";
+
     [Header("Left Mallet (HSV: 0.0 ~ 1.0)")]
     public Vector3 leftLowerHSV = new Vector3(0.8f, 0.4f, 0.4f);
     public Vector3 leftUpperHSV = new Vector3(0.95f, 1.0f, 1.0f);
@@ -84,16 +88,14 @@ public sealed class GpuMalletTracker : MonoBehaviour
             return;
         }
 
-        WebCamDevice selectedDevice = devices[0];
-        for (int i = 0; i < devices.Length; i++)
+        LogCameraDevices(devices);
+        if (!TrySelectCamera(devices, out WebCamDevice selectedDevice))
         {
-            if (devices[i].isFrontFacing)
-            {
-                selectedDevice = devices[i];
-                break;
-            }
+            enabled = false;
+            return;
         }
 
+        Debug.Log($"GpuMalletTracker selected camera: '{selectedDevice.name}'.", this);
         frontFacingCamera = selectedDevice.isFrontFacing;
         webCam = new WebCamTexture(selectedDevice.name, 1280, 720, 60);
         webCam.Play();
@@ -110,6 +112,58 @@ public sealed class GpuMalletTracker : MonoBehaviour
         kernelIndex = trackerShader.FindKernel("CSMain");
         leftFilter.SetNoiseParameters(processNoise, measurementNoise);
         rightFilter.SetNoiseParameters(processNoise, measurementNoise);
+    }
+
+    [ContextMenu("Log Available Camera Devices")]
+    public void LogAvailableCameraDevices()
+    {
+        LogCameraDevices(WebCamTexture.devices);
+    }
+
+    private void LogCameraDevices(WebCamDevice[] devices)
+    {
+        if (devices == null || devices.Length == 0)
+        {
+            Debug.LogWarning("No camera devices detected. Connect the phone as a PC camera and check camera permissions.", this);
+            return;
+        }
+
+        for (int i = 0; i < devices.Length; i++)
+        {
+            Debug.Log($"Camera [{i}]: '{devices[i].name}' (front facing: {devices[i].isFrontFacing}).", this);
+        }
+    }
+
+    private bool TrySelectCamera(WebCamDevice[] devices, out WebCamDevice selectedDevice)
+    {
+        selectedDevice = devices[0];
+        if (!string.IsNullOrEmpty(cameraDeviceName))
+        {
+            for (int i = 0; i < devices.Length; i++)
+            {
+                if (string.Equals(devices[i].name, cameraDeviceName, System.StringComparison.Ordinal))
+                {
+                    selectedDevice = devices[i];
+                    return true;
+                }
+            }
+
+            Debug.LogError($"Requested camera '{cameraDeviceName}' was not found. No other camera will be opened. Use Log Available Camera Devices to check the exact name.", this);
+            return false;
+        }
+
+        // Preserve the existing automatic selection for scenes without an explicit device.
+        for (int i = 0; i < devices.Length; i++)
+        {
+            if (devices[i].isFrontFacing)
+            {
+                selectedDevice = devices[i];
+                break;
+            }
+        }
+
+        Debug.LogWarning("Camera Device Name is empty; selecting a camera automatically. Set the exact phone camera name for live input.", this);
+        return true;
     }
 
     private void Update()
@@ -154,7 +208,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         int threadGroupsY = Mathf.CeilToInt(webCam.height / (float)ThreadsPerGroup);
         trackerShader.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
-        double timestampMs = Time.realtimeSinceStartup * 1000.0;
+        double timestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
         dispatchTimestamps[slot] = timestampMs;
         readbackPending[slot] = true;
         switch (slot)
@@ -245,7 +299,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         if (pixelCount <= minPixelArea)
         {
             filter.Clear();
-            GameEventBus.OnTrackingLost?.Invoke(malletId);
+            GameEventBus.PublishTrackingLost(malletId, timestampMs);
             return new MalletState
             {
                 MalletId = malletId,

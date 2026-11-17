@@ -1,14 +1,60 @@
 using System;
+using System.Collections.Generic;
+using UnityEngine;
 
 // Contract: docs/event_bus_architecture_data_structures_ko.md.
 // Publish on the Unity main thread; unsubscribe when components are disabled.
 public static class GameEventBus
 {
+    // Camera publishers must use the publish methods so cached state stays in sync.
+    public static event Action<CameraFrameData> OnCameraFrameReceived;
+    public static event Action<CameraInputStateData> OnCameraInputStateChanged;
+
+    private static readonly Dictionary<string, CameraInputStateData> cameraStates =
+        new Dictionary<string, CameraInputStateData>(StringComparer.Ordinal);
+
+    // Synchronous notification only: never cache or take ownership of a texture.
+    public static void PublishCameraFrame(CameraFrameData frame)
+    {
+        OnCameraFrameReceived?.Invoke(frame);
+    }
+
+    public static void PublishCameraInputState(CameraInputStateData state)
+    {
+        cameraStates[state.CameraId] = state;
+        OnCameraInputStateChanged?.Invoke(state);
+    }
+
+    // Subscribe first, then query on the main thread. Streaming still requires
+    // waiting for a new frame; the cached state contains no texture.
+    public static bool TryGetCameraInputState(string cameraId, out CameraInputStateData state)
+    {
+        return cameraStates.TryGetValue(cameraId, out state);
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetCameraInput()
+    {
+        cameraStates.Clear();
+        OnCameraFrameReceived = null;
+        OnCameraInputStateChanged = null;
+    }
+
     // A -> B, C: left and right mallet states from one analyzed frame.
     public static Action<MalletState, MalletState> OnMalletsTracked;
 
-    // A -> B, C: ID of the mallet whose tracking was lost.
+    // Legacy notification without ordering information. Kept for existing subscribers.
     public static Action<int> OnTrackingLost;
+
+    // A -> B: mallet ID and the failed observation's TimestampMs, using the same
+    // clock as MalletState. Ordered consumers should use this instead of OnTrackingLost.
+    public static Action<int, double> OnTrackingLostAt;
+
+    public static void PublishTrackingLost(int malletId, double timestampMs)
+    {
+        OnTrackingLostAt?.Invoke(malletId, timestampMs);
+        OnTrackingLost?.Invoke(malletId);
+    }
 
     // A -> calibration: raw values required to build a CoordinateMapper calibration.
     public static Action<RawMalletSample> OnRawMalletSample;
