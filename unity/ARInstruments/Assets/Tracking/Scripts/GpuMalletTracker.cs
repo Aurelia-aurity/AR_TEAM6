@@ -40,6 +40,10 @@ public sealed class GpuMalletTracker : MonoBehaviour
     public Vector3 worldMin = new Vector3(-5.0f, -3.0f, 0.0f);
     public Vector3 worldMax = new Vector3(5.0f, 3.0f, 2.0f);
 
+    [Header("Watchdog")]
+    [SerializeField] private float startTimeoutSeconds = 5.0f;
+    [SerializeField] private float frameTimeoutSeconds = 2.0f;
+
     private const int ResultCount = 6;
     private const int ThreadsPerGroup = 8;
     private const int ReadbackSlotCount = 3;
@@ -54,14 +58,17 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private readonly KalmanFilter2D leftFilter = new KalmanFilter2D();
     private readonly KalmanFilter2D rightFilter = new KalmanFilter2D();
     private readonly CoordinateMapper coordinateMapper = new CoordinateMapper();
-    private readonly Action<AsyncGPUReadbackRequest> onReadbackSlot0;
-    private readonly Action<AsyncGPUReadbackRequest> onReadbackSlot1;
-    private readonly Action<AsyncGPUReadbackRequest> onReadbackSlot2;
+    private Action<AsyncGPUReadbackRequest> onReadbackSlot0;
+    private Action<AsyncGPUReadbackRequest> onReadbackSlot1;
+    private Action<AsyncGPUReadbackRequest> onReadbackSlot2;
     private bool cameraCalibrationReady;
     private bool frontFacingCamera;
     private bool cameraStreamingPublished;
+    private bool terminalStatePublished;
     private bool shuttingDown;
     private Guid sessionId;
+    private double sessionStartMs;
+    private double lastFrameReceivedMs;
 
     private void Awake()
     {
@@ -70,8 +77,17 @@ public sealed class GpuMalletTracker : MonoBehaviour
         onReadbackSlot2 = OnReadbackSlot2;
     }
 
-    private void Start()
+    private void OnEnable()
     {
+        shuttingDown = false;
+        cameraCalibrationReady = false;
+        cameraStreamingPublished = false;
+        terminalStatePublished = false;
+
+        if (string.IsNullOrEmpty(cameraId))
+        {
+            cameraId = "primary";
+        }
         sessionId = Guid.NewGuid();
         PublishCameraInputState(CameraInputState.Waiting, CameraInputError.None);
 
@@ -80,6 +96,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             Debug.LogError("GpuMalletTracker requires a compute shader.", this);
             PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
                 "GpuMalletTracker requires a compute shader.");
+            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -89,6 +106,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             Debug.LogError("This platform does not support compute shaders.", this);
             PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
                 "This platform does not support compute shaders.");
+            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -98,6 +116,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             Debug.LogError("This platform does not support async GPU readback.", this);
             PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
                 "This platform does not support async GPU readback.");
+            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -108,6 +127,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             Debug.LogError("No camera device is available for GpuMalletTracker.", this);
             PublishCameraInputState(CameraInputState.Error, CameraInputError.DeviceNotFound,
                 "No camera device is available.");
+            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -117,6 +137,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         {
             PublishCameraInputState(CameraInputState.Error, CameraInputError.DeviceNotFound,
                 "The selected camera was not found.");
+            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -125,11 +146,16 @@ public sealed class GpuMalletTracker : MonoBehaviour
         frontFacingCamera = selectedDevice.isFrontFacing;
         webCam = new WebCamTexture(selectedDevice.name, 1280, 720, 60);
         webCam.Play();
+        sessionStartMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        lastFrameReceivedMs = sessionStartMs;
 
         for (int i = 0; i < ReadbackSlotCount; i++)
         {
             resultBuffers[i] = new ComputeBuffer(ResultCount, sizeof(uint));
+            readbackPending[i] = false;
+            dispatchTimestamps[i] = 0.0;
         }
+        nextReadbackSlot = 0;
 
         kernelIndex = trackerShader.FindKernel("CSMain");
         leftFilter.SetNoiseParameters(processNoise, measurementNoise);
@@ -190,18 +216,37 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
     private void Update()
     {
-        if (webCam == null || !webCam.isPlaying || !webCam.didUpdateThisFrame)
+        double nowMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+
+        if (!cameraStreamingPublished)
+        {
+            if ((nowMs - sessionStartMs) > startTimeoutSeconds * 1000.0)
+            {
+                PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
+                    "Camera start timed out.", nowMs);
+                terminalStatePublished = true;
+                enabled = false;
+                return;
+            }
+        }
+        else if (webCam == null || !webCam.isPlaying || (nowMs - lastFrameReceivedMs) > frameTimeoutSeconds * 1000.0)
+        {
+            PublishCameraInputState(CameraInputState.Error, CameraInputError.FrameTimeout,
+                "Camera frame stream interrupted.", nowMs);
+            terminalStatePublished = true;
+            enabled = false;
+            return;
+        }
+
+        if (webCam == null || !webCam.isPlaying || !webCam.didUpdateThisFrame || webCam.width <= 16)
         {
             return;
         }
 
+        lastFrameReceivedMs = nowMs;
+
         if (!cameraCalibrationReady)
         {
-            if (webCam.width <= 16)
-            {
-                return;
-            }
-
             coordinateMapper.SetupCamera(
                 webCam.width,
                 webCam.height,
@@ -218,7 +263,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
         if (!cameraStreamingPublished)
         {
-            PublishCameraInputState(CameraInputState.Streaming, CameraInputError.None);
+            PublishCameraInputState(CameraInputState.Streaming, CameraInputError.None, null, nowMs);
             cameraStreamingPublished = true;
         }
         GameEventBus.PublishCameraFrame(new CameraFrameData
@@ -228,7 +273,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             Texture = webCam,
             ClockwiseRotation = webCam.videoRotationAngle,
             VerticallyMirrored = webCam.videoVerticallyMirrored,
-            ReceivedAtMs = Time.realtimeSinceStartupAsDouble * 1000.0
+            ReceivedAtMs = nowMs
         });
 
         int slot = FindAvailableReadbackSlot();
@@ -453,7 +498,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         }
 
         shuttingDown = true;
-        if (sessionId != Guid.Empty && webCam != null)
+        if (sessionId != Guid.Empty && webCam != null && !terminalStatePublished)
         {
             PublishCameraInputState(CameraInputState.Stopped, CameraInputError.None);
         }
@@ -483,13 +528,22 @@ public sealed class GpuMalletTracker : MonoBehaviour
         CameraInputError error,
         string description = null)
     {
+        PublishCameraInputState(state, error, description, Time.realtimeSinceStartupAsDouble * 1000.0);
+    }
+
+    private void PublishCameraInputState(
+        CameraInputState state,
+        CameraInputError error,
+        string description,
+        double changedAtMs)
+    {
         GameEventBus.PublishCameraInputState(new CameraInputStateData
         {
             CameraId = cameraId,
             SessionId = sessionId,
             DeviceName = webCam == null ? cameraDeviceName : webCam.deviceName,
             State = state,
-            ChangedAtMs = Time.realtimeSinceStartupAsDouble * 1000.0,
+            ChangedAtMs = changedAtMs,
             Error = error,
             Description = description
         });
