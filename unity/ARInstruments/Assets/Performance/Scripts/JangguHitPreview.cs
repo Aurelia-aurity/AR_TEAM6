@@ -410,7 +410,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
             hits++;
             lastHitStrength = hit.HitForce;
             bool isDeok = hit.InstrumentId == RegionA;
-            int strength = hit.HitForce >= 0.66f ? 0 : hit.HitForce >= 0.33f ? 1 : 2;
+            int strength = JangguSoundProfile.GetStrengthIndex(hit.HitForce);
             string strengthName = strength == 0 ? "strong" : strength == 1 ? "medium" : "weak";
             lastHitSound = $"{(isDeok ? "Deok" : "Kung")} {strengthName}";
             if (hitAudio != null)

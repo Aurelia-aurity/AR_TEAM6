@@ -18,6 +18,16 @@ public sealed class JangguSoundProfile : ScriptableObject
     [SerializeField] private Vector3 deokPitches = Vector3.one;
     [SerializeField] private Vector3 kungPitches = Vector3.one;
 
+    public static int GetStrengthIndex(float normalizedForce)
+    {
+        if (normalizedForce >= 0.66f)
+        {
+            return 0;
+        }
+
+        return normalizedForce >= 0.33f ? 1 : 2;
+    }
+
     public AudioClip GetDeong(int strength) => GetClip(deong, strength);
     public AudioClip GetSample(int sample) => sample < StrengthCount
         ? GetClip(deok, sample)
