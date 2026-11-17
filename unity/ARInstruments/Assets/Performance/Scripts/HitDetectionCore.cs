@@ -115,7 +115,10 @@ public sealed class HitDetectionCore : IDisposable
             return;
         }
 
-        if (state.Confidence <= 0.0f)
+        if (float.IsNaN(state.Confidence) || float.IsInfinity(state.Confidence) || state.Confidence <= 0.0f
+            || float.IsNaN(state.Position.x) || float.IsInfinity(state.Position.x)
+            || float.IsNaN(state.Position.y) || float.IsInfinity(state.Position.y)
+            || float.IsNaN(state.Position.z) || float.IsInfinity(state.Position.z))
         {
             // 추적이 재개되면 새 이동 구간부터 판정한다.
             mallet.PreviousSample = null;
