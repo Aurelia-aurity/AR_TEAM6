@@ -8,6 +8,7 @@ internal sealed class JangguAudioTuningWindow : EditorWindow
     [SerializeField] private JangguSoundProfile profile;
     private Editor profileEditor;
     private Vector2 scroll;
+    private GUIStyle saveButtonStyle;
 
     [InitializeOnLoadMethod]
     private static void RegisterPlayModeSave()
@@ -57,13 +58,25 @@ internal sealed class JangguAudioTuningWindow : EditorWindow
             return;
         }
 
+        saveButtonStyle ??= new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold };
+        bool saveRequested;
         using (var view = new EditorGUILayout.ScrollViewScope(scroll))
         {
             scroll = view.scrollPosition;
             profileEditor.OnInspectorGUI();
+
+            GUILayout.Space(8);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                Color previousBackground = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(0.46f, 0.74f, 1f);
+                saveRequested = GUILayout.Button("프로필 저장", saveButtonStyle, GUILayout.Width(140), GUILayout.Height(28));
+                GUI.backgroundColor = previousBackground;
+            }
         }
 
-        if (GUILayout.Button("프로필 저장"))
+        if (saveRequested)
         {
             AssetDatabase.SaveAssetIfDirty(profile);
         }
