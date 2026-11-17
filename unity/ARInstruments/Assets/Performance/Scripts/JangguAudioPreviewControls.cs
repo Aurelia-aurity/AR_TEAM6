@@ -33,6 +33,20 @@ public sealed class JangguAudioPreviewControls : MonoBehaviour
         }
     }
 
+    public void RefreshFromInspector(JangguAudioPreview changedPreview)
+    {
+        if (preview != changedPreview)
+        {
+            return;
+        }
+
+        for (int index = 0; index < JangguAudioPreview.SampleCount; index++)
+        {
+            RefreshGain(index);
+            RefreshPitch(index);
+        }
+    }
+
     private void UpdateGain(int sample, string value)
     {
         if (TryParse(value, out float gain))
