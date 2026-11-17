@@ -30,24 +30,29 @@ public sealed class HitRegionVibration : MonoBehaviour
         public bool Playing;
     }
 
-    private readonly Dictionary<string, RegionState> states = new Dictionary<string, RegionState>(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> stateIndices = new Dictionary<string, int>(StringComparer.Ordinal);
+    private RegionState[] stateList = Array.Empty<RegionState>();
 
     private void OnEnable()
     {
-        states.Clear();
+        stateIndices.Clear();
         var targets = new HashSet<Transform>();
-        foreach (RegionBinding binding in regions)
+        stateList = new RegionState[regions.Length];
+        for (int i = 0; i < regions.Length; i++)
         {
+            RegionBinding binding = regions[i];
             if (binding == null || string.IsNullOrWhiteSpace(binding.RegionId) || binding.Target == null
                 || binding.Target == transform || !binding.Target.IsChildOf(transform)
                 || !IsFinite(binding.LocalNormal) || binding.LocalNormal.sqrMagnitude < 0.000001f
-                || states.ContainsKey(binding.RegionId) || !targets.Add(binding.Target))
+                || stateIndices.ContainsKey(binding.RegionId) || !targets.Add(binding.Target))
             {
                 Debug.LogError("HitRegionVibration requires unique IDs, unique visual children and valid local normals.", this);
+                stateList = Array.Empty<RegionState>();
                 enabled = false;
                 return;
             }
-            states.Add(binding.RegionId, new RegionState { Binding = binding, RestPosition = binding.Target.localPosition });
+            stateIndices.Add(binding.RegionId, i);
+            stateList[i] = new RegionState { Binding = binding, RestPosition = binding.Target.localPosition };
         }
         GameEventBus.OnValidHit += OnValidHit;
     }
@@ -58,8 +63,11 @@ public sealed class HitRegionVibration : MonoBehaviour
     public bool PlayHit(string regionId, float force)
     {
         if (!isActiveAndEnabled || string.IsNullOrEmpty(regionId) || !IsFinite(force)
-            || !states.TryGetValue(regionId, out RegionState state)
-            || state.Binding.Target == null || !state.Binding.Target.gameObject.activeInHierarchy)
+            || !stateIndices.TryGetValue(regionId, out int index))
+            return false;
+
+        RegionState state = stateList[index];
+        if (state.Binding.Target == null || !state.Binding.Target.gameObject.activeInHierarchy)
             return false;
 
         // Restart from the saved rest pose, never from the previous displaced position.
@@ -76,8 +84,9 @@ public sealed class HitRegionVibration : MonoBehaviour
     private void Update()
     {
         double now = Time.unscaledTimeAsDouble;
-        foreach (RegionState state in states.Values)
+        for (int i = 0; i < stateList.Length; i++)
         {
+            RegionState state = stateList[i];
             if (!state.Playing) continue;
             Transform target = state.Binding.Target;
             float progress = (float)((now - state.StartedAt) / state.Duration);
@@ -110,8 +119,9 @@ public sealed class HitRegionVibration : MonoBehaviour
     private void OnDisable()
     {
         GameEventBus.OnValidHit -= OnValidHit;
-        foreach (RegionState state in states.Values) Restore(state);
-        states.Clear();
+        for (int i = 0; i < stateList.Length; i++) Restore(stateList[i]);
+        stateIndices.Clear();
+        stateList = Array.Empty<RegionState>();
     }
 
     private static void Restore(RegionState state)
