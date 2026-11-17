@@ -103,6 +103,11 @@ public sealed class JangguAudioPreviewEditor : Editor
         if (GUILayout.Button("재생 중지"))
         {
             StopPlayback();
+            if (Application.isPlaying)
+            {
+                preview.Stop();
+            }
+
             status = null;
         }
 
@@ -305,10 +310,6 @@ public sealed class JangguAudioPreviewEditor : Editor
     private void StopPlayback()
     {
         EditorApplication.update -= FinishPreviewWhenElapsed;
-        if (Application.isPlaying && target is JangguAudioPreview preview && preview != null)
-        {
-            preview.Stop();
-        }
 
         if (ownsEditorPreview)
         {
