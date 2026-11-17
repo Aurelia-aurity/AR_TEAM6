@@ -4722,9 +4722,9 @@ MonoBehaviour:
   primarySource: {fileID: 114812964}
   secondarySource: {fileID: 910523002}
   deokVolumes: {x: 1, y: 1, z: 1}
-  kungVolumes: {x: 1, y: 1, z: 1}
+  kungVolumes: {x: 1.7, y: 1.7, z: 1.7}
   deokPitches: {x: 1, y: 1, z: 1}
-  kungPitches: {x: 1, y: 1, z: 1}
+  kungPitches: {x: 0.9, y: 0.9, z: 0.9}
 --- !u!4 &649139705
 Transform:
   m_ObjectHideFlags: 0
