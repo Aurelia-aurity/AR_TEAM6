@@ -1,33 +1,33 @@
 using System.Collections.Generic;
 using UnityEngine;
+using static JangguSoundProfile;
 
 public sealed class JangguAudioPreview : MonoBehaviour
 {
     private const int InitialVoicesPerSource = 8;
 
-    public const int StrengthCount = 3;
-    public const int SampleCount = 6;
-    public const float MaxGain = 5f;
-    public const float MinPitch = 0.5f;
-    public const float MaxPitch = 1.5f;
-
-    [SerializeField] private AudioClip[] deong;
-    [SerializeField] private AudioClip[] deok;
-    [SerializeField] private AudioClip[] kung;
+    [SerializeField] private JangguSoundProfile profile;
     [SerializeField] private AudioSource primarySource;
     [SerializeField] private AudioSource secondarySource;
 
-    // 각 벡터의 x, y, z 순서는 강, 중, 약이다.
-    [SerializeField] private Vector3 deokVolumes = Vector3.one;
-    [SerializeField] private Vector3 kungVolumes = Vector3.one;
-    [SerializeField] private Vector3 deokPitches = Vector3.one;
-    [SerializeField] private Vector3 kungPitches = Vector3.one;
+    private JangguSoundProfile sessionProfile;
+    private int editedGains;
+    private int editedPitches;
+
+    public bool KeepSessionTuning { get; set; }
+    public JangguSoundProfile SavedProfile => profile;
+    public JangguSoundProfile Profile => sessionProfile != null ? sessionProfile : profile;
 
     private readonly List<AudioSource> primaryVoices = new List<AudioSource>(InitialVoicesPerSource);
     private readonly List<AudioSource> secondaryVoices = new List<AudioSource>(InitialVoicesPerSource);
 
     private void Awake()
     {
+        if (profile != null)
+        {
+            sessionProfile = Instantiate(profile);
+        }
+
         PrewarmVoices(primarySource, primaryVoices);
         PrewarmVoices(secondarySource, secondaryVoices);
     }
@@ -37,34 +37,67 @@ public sealed class JangguAudioPreview : MonoBehaviour
         Stop();
     }
 
-    public float GetGain(int sample)
+    private void OnDestroy()
     {
-        return sample < StrengthCount ? deokVolumes[sample] : kungVolumes[sample - StrengthCount];
+        if (sessionProfile != null)
+        {
+            Destroy(sessionProfile);
+        }
     }
 
-    public float GetPitch(int sample)
-    {
-        return sample < StrengthCount ? deokPitches[sample] : kungPitches[sample - StrengthCount];
-    }
-
+    public float GetGain(int sample) => Profile != null ? Profile.GetGain(sample) : 1f;
+    public float GetPitch(int sample) => Profile != null ? Profile.GetPitch(sample) : 1f;
     public void SetGain(int sample, float gain)
     {
-        SetSampleValue(ref deokVolumes, ref kungVolumes, sample, Mathf.Clamp(gain, 0f, MaxGain));
+        if (sessionProfile != null)
+        {
+            sessionProfile.SetGain(sample, gain);
+            editedGains |= 1 << sample;
+        }
     }
 
     public void SetPitch(int sample, float pitch)
     {
-        SetSampleValue(ref deokPitches, ref kungPitches, sample, Mathf.Clamp(pitch, MinPitch, MaxPitch));
+        if (sessionProfile != null)
+        {
+            sessionProfile.SetPitch(sample, pitch);
+            editedPitches |= 1 << sample;
+        }
+    }
+
+    public bool SaveSessionTuning()
+    {
+        if (!KeepSessionTuning || sessionProfile == null || profile == null ||
+            (editedGains | editedPitches) == 0)
+        {
+            return false;
+        }
+
+        for (int sample = 0; sample < SampleCount; sample++)
+        {
+            int mask = 1 << sample;
+            if ((editedGains & mask) != 0)
+            {
+                profile.SetGain(sample, sessionProfile.GetGain(sample));
+            }
+
+            if ((editedPitches & mask) != 0)
+            {
+                profile.SetPitch(sample, sessionProfile.GetPitch(sample));
+            }
+        }
+
+        return true;
     }
 
     public void PlayDeong(int strength)
     {
-        Play(primarySource, primaryVoices, deong[strength], 1f, 1f);
+        Play(primarySource, primaryVoices, Profile?.GetDeong(strength), 1f, 1f);
     }
 
     public void PlaySample(int sample)
     {
-        AudioClip clip = sample < StrengthCount ? deok[sample] : kung[sample - StrengthCount];
+        AudioClip clip = Profile?.GetSample(sample);
         Play(primarySource, primaryVoices, clip, GetGain(sample), GetPitch(sample));
     }
 
@@ -73,8 +106,8 @@ public sealed class JangguAudioPreview : MonoBehaviour
         int deokStrength = selection / StrengthCount;
         int kungStrength = selection % StrengthCount;
         int kungSample = StrengthCount + kungStrength;
-        Play(primarySource, primaryVoices, deok[deokStrength], GetGain(deokStrength), GetPitch(deokStrength));
-        Play(secondarySource, secondaryVoices, kung[kungStrength], GetGain(kungSample), GetPitch(kungSample));
+        Play(primarySource, primaryVoices, Profile?.GetSample(deokStrength), GetGain(deokStrength), GetPitch(deokStrength));
+        Play(secondarySource, secondaryVoices, Profile?.GetSample(kungSample), GetGain(kungSample), GetPitch(kungSample));
     }
 
     public void Stop()
@@ -87,18 +120,6 @@ public sealed class JangguAudioPreview : MonoBehaviour
         foreach (var voice in secondaryVoices)
         {
             voice.Stop();
-        }
-    }
-
-    private static void SetSampleValue(ref Vector3 deokValues, ref Vector3 kungValues, int sample, float value)
-    {
-        if (sample < StrengthCount)
-        {
-            deokValues[sample] = value;
-        }
-        else
-        {
-            kungValues[sample - StrengthCount] = value;
         }
     }
 

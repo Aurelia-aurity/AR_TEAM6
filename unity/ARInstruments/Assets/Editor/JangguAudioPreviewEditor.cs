@@ -4,8 +4,8 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
-[CustomEditor(typeof(JangguAudioPreview))]
-public sealed class JangguAudioPreviewEditor : Editor
+[CustomEditor(typeof(JangguSoundProfile))]
+internal sealed class JangguSoundProfileEditor : Editor
 {
     private static readonly string[] Strengths = { "강", "중", "약" };
     private static readonly Type AudioUtil = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
@@ -18,6 +18,8 @@ public sealed class JangguAudioPreviewEditor : Editor
     private bool ownsEditorPreview;
     private string status;
 
+    public JangguAudioPreview ScenePreview { get; set; }
+
     private bool showReferences;
     private GUIStyle columnHeading;
     private double previewEnd;
@@ -25,7 +27,7 @@ public sealed class JangguAudioPreviewEditor : Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
-        var preview = (JangguAudioPreview)target;
+        var profile = (JangguSoundProfile)target;
         var deong = serializedObject.FindProperty("deong");
         var deok = serializedObject.FindProperty("deok");
         var kung = serializedObject.FindProperty("kung");
@@ -39,7 +41,7 @@ public sealed class JangguAudioPreviewEditor : Editor
                 {
                     int selection = strength;
                     Play($"덩 {Strengths[strength]}", GetClip(deong, strength), 1f, 1f,
-                        () => preview.PlayDeong(selection));
+                        () => ScenePreview?.PlayDeong(selection));
                 }
             }
         }
@@ -49,11 +51,11 @@ public sealed class JangguAudioPreviewEditor : Editor
         int sampleToPlay = DrawSampleSettings("덕", "deokVolumes", "deokPitches", 0);
         int kungToPlay = DrawSampleSettings("쿵", "kungVolumes", "kungPitches", Strengths.Length);
 
-        if (serializedObject.ApplyModifiedProperties() && Application.isPlaying)
+        if (serializedObject.ApplyModifiedProperties() && Application.isPlaying && ScenePreview != null)
         {
             foreach (var controls in FindObjectsByType<JangguAudioPreviewControls>(FindObjectsSortMode.None))
             {
-                controls.RefreshFromInspector(preview);
+                controls.RefreshFromInspector(ScenePreview);
             }
         }
 
@@ -63,8 +65,8 @@ public sealed class JangguAudioPreviewEditor : Editor
             bool isKung = sample >= Strengths.Length;
             int strength = sample % Strengths.Length;
             Play($"{(isKung ? "쿵" : "덕")} {Strengths[strength]}",
-                GetClip(isKung ? kung : deok, strength), preview.GetGain(sample), preview.GetPitch(sample),
-                () => preview.PlaySample(sample));
+                GetClip(isKung ? kung : deok, strength), profile.GetGain(sample), profile.GetPitch(sample),
+                () => ScenePreview?.PlaySample(sample));
         }
 
         EditorGUILayout.Space();
@@ -91,9 +93,9 @@ public sealed class JangguAudioPreviewEditor : Editor
                         int pair = row * Strengths.Length + column;
                         int kungSample = Strengths.Length + column;
                         Play($"덕 {Strengths[row]} + 쿵 {Strengths[column]}",
-                            GetClip(deok, row), preview.GetGain(row), preview.GetPitch(row),
-                            () => preview.PlayPair(pair), GetClip(kung, column),
-                            preview.GetGain(kungSample), preview.GetPitch(kungSample), true);
+                            GetClip(deok, row), profile.GetGain(row), profile.GetPitch(row),
+                            () => ScenePreview?.PlayPair(pair), GetClip(kung, column),
+                            profile.GetGain(kungSample), profile.GetPitch(kungSample), true);
                     }
                 }
             }
@@ -103,9 +105,9 @@ public sealed class JangguAudioPreviewEditor : Editor
         if (GUILayout.Button("재생 중지"))
         {
             StopPlayback();
-            if (Application.isPlaying)
+            if (Application.isPlaying && ScenePreview != null)
             {
-                preview.Stop();
+                ScenePreview.Stop();
             }
 
             status = null;
@@ -117,14 +119,12 @@ public sealed class JangguAudioPreviewEditor : Editor
         }
 
         EditorGUILayout.Space();
-        showReferences = EditorGUILayout.Foldout(showReferences, "원본 음원 및 AudioSource", true);
+        showReferences = EditorGUILayout.Foldout(showReferences, "원본 음원", true);
         if (showReferences)
         {
             EditorGUILayout.PropertyField(deong);
             EditorGUILayout.PropertyField(deok);
             EditorGUILayout.PropertyField(kung);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("primarySource"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("secondarySource"));
         }
         serializedObject.ApplyModifiedProperties();
     }
@@ -143,10 +143,10 @@ public sealed class JangguAudioPreviewEditor : Editor
                 GUILayout.Label($"{stroke} {Strengths[index]}", GUILayout.Width(45));
                 float oldLabelWidth = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 35f;
-                volumes[index] = EditorGUILayout.Slider("음량", volumes[index], 0f, JangguAudioPreview.MaxGain);
+                volumes[index] = EditorGUILayout.Slider("음량", volumes[index], 0f, JangguSoundProfile.MaxGain);
                 GUILayout.Space(16f);
                 pitches[index] = EditorGUILayout.Slider("피치", pitches[index],
-                    JangguAudioPreview.MinPitch, JangguAudioPreview.MaxPitch);
+                    JangguSoundProfile.MinPitch, JangguSoundProfile.MaxPitch);
                 EditorGUIUtility.labelWidth = oldLabelWidth;
                 if (GUILayout.Button("재생", GUILayout.Width(42)))
                 {
@@ -175,7 +175,7 @@ public sealed class JangguAudioPreviewEditor : Editor
             return;
         }
 
-        if (Application.isPlaying)
+        if (Application.isPlaying && ScenePreview != null)
         {
             playInGame();
         }
@@ -332,6 +332,51 @@ public sealed class JangguAudioPreviewEditor : Editor
         if (!AssetDatabase.DeleteAsset(path))
         {
             File.Delete(path);
+        }
+    }
+}
+
+[CustomEditor(typeof(JangguAudioPreview))]
+public sealed class JangguAudioPreviewEditor : Editor
+{
+    private Editor profileEditor;
+    private bool showSceneBindings;
+
+    public override void OnInspectorGUI()
+    {
+        var preview = (JangguAudioPreview)target;
+        var profile = preview.Profile;
+        if (profile != null)
+        {
+            CreateCachedEditor(profile, typeof(JangguSoundProfileEditor), ref profileEditor);
+            ((JangguSoundProfileEditor)profileEditor).ScenePreview = preview;
+            profileEditor.OnInspectorGUI();
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("장구 음원 프로필을 연결하세요.", MessageType.Warning);
+        }
+
+        serializedObject.Update();
+        showSceneBindings = EditorGUILayout.Foldout(showSceneBindings, "씬 AudioSource 및 프로필", true);
+        if (showSceneBindings || profile == null)
+        {
+            using (new EditorGUI.DisabledScope(Application.isPlaying))
+            {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("profile"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("primarySource"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("secondarySource"));
+            }
+        }
+
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    private void OnDisable()
+    {
+        if (profileEditor != null)
+        {
+            DestroyImmediate(profileEditor);
         }
     }
 }

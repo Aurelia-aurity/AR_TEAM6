@@ -10,10 +10,18 @@ public sealed class JangguAudioPreviewControls : MonoBehaviour
 
     [SerializeField] private Slider[] gainSliders;
     [SerializeField] private Slider[] pitchSliders;
+    [SerializeField] private Toggle saveTuningToggle;
 
     private void Awake()
     {
-        for (int index = 0; index < JangguAudioPreview.SampleCount; index++)
+        if (saveTuningToggle != null)
+        {
+            saveTuningToggle.gameObject.SetActive(Application.isEditor);
+            saveTuningToggle.SetIsOnWithoutNotify(false);
+            saveTuningToggle.onValueChanged.AddListener(keep => preview.KeepSessionTuning = keep);
+        }
+
+        for (int index = 0; index < JangguSoundProfile.SampleCount; index++)
         {
             int sample = index;
             RefreshGain(sample);
@@ -40,7 +48,7 @@ public sealed class JangguAudioPreviewControls : MonoBehaviour
             return;
         }
 
-        for (int index = 0; index < JangguAudioPreview.SampleCount; index++)
+        for (int index = 0; index < JangguSoundProfile.SampleCount; index++)
         {
             RefreshGain(index);
             RefreshPitch(index);

@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1dd494fc40654c9e9cb2c82f865a4c40, type: 3}
+  m_Name: JangguSoundProfile
+  m_EditorClassIdentifier:
+  deong:
+  - {fileID: 8300000, guid: 546f88bbb6c4b0a44b71a00372feb2c1, type: 3}
+  - {fileID: 8300000, guid: 324e3653c17e02e4b938ee94d226359f, type: 3}
+  - {fileID: 8300000, guid: 1cf4ec0e8c40a1e438b9ef2b286079dd, type: 3}
+  deok:
+  - {fileID: 8300000, guid: 74c8f629669e96f4081cbccbbfb6e5ae, type: 3}
+  - {fileID: 8300000, guid: c5aedb2a6fcff40449c460d7b8ab491c, type: 3}
+  - {fileID: 8300000, guid: 3d9e68beef72ea142a9cab42b30b171d, type: 3}
+  kung:
+  - {fileID: 8300000, guid: dae51d12b56038c448670b69fff54559, type: 3}
+  - {fileID: 8300000, guid: b4bd58c2b39d5954d8f4b883c16903c0, type: 3}
+  - {fileID: 8300000, guid: 7b438d69e48056445beb27028c935ed6, type: 3}
+  deokVolumes: {x: 1, y: 1, z: 1}
+  kungVolumes: {x: 1.7, y: 1.7, z: 1.7}
+  deokPitches: {x: 1, y: 1, z: 1}
+  kungPitches: {x: 0.9, y: 0.9, z: 0.9}
