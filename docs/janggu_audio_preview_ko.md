@@ -12,6 +12,25 @@
 
 비교 씬의 **Janggu Audio Preview** 오브젝트를 선택하면 Inspector에서도 같은 설정과 미리듣기 버튼을 사용할 수 있다.
 
+## 기본 음량과 출력 보호
+
+프로필에 저장된 기본값은 다음과 같다. 강·중·약은 각 주법의 원본 샘플 선택을 뜻한다.
+
+| 설정 | 강 | 중 | 약 |
+| --- | --- | --- | --- |
+| 덕 음량 | `1.0` | `1.0` | `1.0` |
+| 쿵 음량 | `1.7` | `1.7` | `3.1` |
+| 덕 피치 | `1.0` | `1.0` | `1.0` |
+| 쿵 피치 | `0.9` | `0.9` | `0.9` |
+
+재생할 때 개별 음량에 공통 감쇠 `0.35`배를 곱한다. 예를 들어 쿵 약의 음량 `3.1`은 리미터 처리 전 배율 `1.085`가 된다. 원본 덩도 공통 감쇠를 적용해 같은 출력 기준으로 비교한다. 공통 감쇠는 [JangguSoundProfile.PlaybackGain](../unity/ARInstruments/Assets/Performance/Scripts/JangguSoundProfile.cs)에서 조정한다.
+
+공통 감쇠 후 합쳐진 신호에는 [JangguPeakLimiter](../unity/ARInstruments/Assets/Performance/Scripts/JangguPeakLimiter.cs)를 적용한다. 샘플 피크의 상한은 `0.95`이며, 상한을 넘는 순간 모든 채널에 같은 감쇠를 적용한다. 피크가 지나가면 감쇠를 서서히 해제한다. 회복 시정수는 `50ms`로, 완전히 복원되는 데 걸리는 시간과는 다르다. 리미터가 작동하는 구간에서는 타격의 세기 차이와 음색이 달라질 수 있다.
+
+- 편집 모드에서는 미리듣기 버튼을 누르면 음량·피치를 반영해 샘플을 합친 뒤, 전체 배열을 리미터로 처리하고 16비트 PCM WAV로 변환한다.
+- Play Mode에서는 `JangguAudioPreview.Awake()`가 활성 AudioListener에 [JangguOutputLimiter](../unity/ARInstruments/Assets/Performance/Scripts/JangguOutputLimiter.cs)를 추가한다. Unity의 오디오 스레드가 `OnAudioFilterRead()`를 호출할 때마다 샘플 묶음을 처리하며, 감쇠 상태를 다음 묶음으로 이어 간다.
+- Play Mode의 리미터는 해당 AudioListener의 최종 출력에 적용된다. 같은 리스너로 들리는 음악과 다른 효과음도 함께 제한된다.
+
 ## Game 탭에서 비교하기
 
 1. [JangguAudioPreview 씬](../unity/ARInstruments/Assets/Performance/Scenes/JangguAudioPreview.unity)을 열고 Play를 누른다.
@@ -36,3 +55,13 @@ Play Mode에서는 타격마다 재생용 AudioSource를 할당하므로 연타 
 양쪽 면이 맞으면 각 타격을 받아 덕과 쿵을 각각 재생한다. 원본 덩은 비교 기준으로 사용한다. 타격 프리뷰의 입력과 판정은 [장구 타격 판정 안내](janggu_hit_detection_ko.md)를 참고한다.
 
 현재 검증은 합성 말렛을 쓰는 프리뷰 기준이다. 실제 카메라 추적과 Main 씬에서의 연주는 후속 검증 대상이다. 장구 음원의 출처와 이용 조건은 [저작물 이용 고지](../NOTICE.md)에 있다.
+
+## 오디오 검증 결과
+
+2026-11-19 Unity `6000.0.25f1`에서 관련 소스와 테스트를 복사한 임시 프로젝트로 검증했다.
+
+- 편집 모드의 실제 WAV 생성 메서드로 기본 합타 9개를 생성했다. 최대 피크는 약 `0.784`였고, 16비트 PCM 범위를 넘는 샘플은 없었다. 덕·쿵 음량을 각각 `5.0`으로 높인 시험 조합도 변환 후 피크가 약 `0.95`로 제한됐다.
+- Play Mode에서 쿵 약 `3.1`, 공통 감쇠 `0.35`, 쿵 피치 `0.9`로 단타·합타와 덕 강+쿵 약의 `0.1초` 간격 10회 연타를 확인했다. 음량을 각각 `5.0`으로 높인 연타 시험에서도 리미터 처리 직후 피크가 약 `0.95`였고, 출력 범위를 넘는 샘플은 없었다.
+- [리미터 단위테스트](../unity/ARInstruments/Assets/Performance/Tests/Editor/JangguPeakLimiterTests.cs) 11개와 기존 프로필 테스트 14개, 총 25개가 EditMode에서 통과했다. 작은 신호 통과, 양수·음수 피크 제한, 좌우 채널 균형, 버퍼 간 연속성, `44.1kHz`·`48kHz` 회복 동작, 무음·빈 배열 처리를 검사한다.
+
+위 결과는 임시 프로젝트의 오디오 처리 및 관련 테스트 범위다. 원본 프로젝트 전체 테스트, 실제 출력 장치의 청취 품질과 타격감은 추가 확인 대상이다.
