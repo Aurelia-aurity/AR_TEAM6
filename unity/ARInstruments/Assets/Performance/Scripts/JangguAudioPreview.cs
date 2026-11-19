@@ -23,6 +23,14 @@ public sealed class JangguAudioPreview : MonoBehaviour
 
     private void Awake()
     {
+        foreach (var listener in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
+        {
+            if (listener.isActiveAndEnabled && listener.GetComponent<JangguOutputLimiter>() == null)
+            {
+                listener.gameObject.AddComponent<JangguOutputLimiter>();
+            }
+        }
+
         if (profile != null)
         {
             sessionProfile = Instantiate(profile);

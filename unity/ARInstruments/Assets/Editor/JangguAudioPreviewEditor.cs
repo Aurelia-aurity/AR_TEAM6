@@ -251,6 +251,8 @@ internal sealed class JangguSoundProfileEditor : Editor
             }
         }
 
+        new JangguPeakLimiter().Process(mixedSamples, first.channels, first.frequency);
+
         previewAssetPath = $"Assets/Editor/JangguPreview-{Guid.NewGuid():N}.wav";
         try
         {
