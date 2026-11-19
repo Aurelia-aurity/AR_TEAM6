@@ -93,6 +93,71 @@ public sealed class JangguPreviewOwnershipTests
         Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(path), Is.Null);
     }
 
+    [Test]
+    public void ReturningToPreviousEditor_PreservesNewestPreview()
+    {
+        Play(first);
+        Play(second);
+        string replacedPath = PreviewPath(second);
+        Play(first);
+
+        editorType.GetField("previewEnd", InstanceFlags).SetValue(second, -1d);
+        Call(second, "FinishPreviewWhenElapsed");
+        UnityEngine.Object.DestroyImmediate(second);
+        second = null;
+
+        Assert.That(ActivePreview, Is.SameAs(first));
+        Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(PreviewPath(first)), Is.Not.Null);
+        Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(replacedPath), Is.Null);
+    }
+
+    [Test]
+    public void CurrentTimerExpiry_ReleasesOwnerAndTemporaryClip()
+    {
+        Play(first);
+        string path = PreviewPath(first);
+
+        editorType.GetField("previewEnd", InstanceFlags).SetValue(first, -1d);
+        Call(first, "FinishPreviewWhenElapsed");
+
+        Assert.That(ActivePreview, Is.Null);
+        Assert.That(PreviewPath(first), Is.Null);
+        Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(path), Is.Null);
+    }
+
+    [Test]
+    public void ClosingCurrentEditor_ReleasesOwnerAndTemporaryClip()
+    {
+        Play(second);
+        string path = PreviewPath(second);
+
+        UnityEngine.Object.DestroyImmediate(second);
+        second = null;
+
+        Assert.That(ActivePreview, Is.Null);
+        Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(path), Is.Null);
+    }
+
+    [Test]
+    public void RepeatedStopAndCleanup_AreSafe()
+    {
+        Play(first);
+        string path = PreviewPath(first);
+
+        Assert.DoesNotThrow(() =>
+        {
+            Call(first, "StopPlayback");
+            Call(first, "StopPlayback");
+            editorType.GetField("previewEnd", InstanceFlags).SetValue(first, -1d);
+            Call(first, "FinishPreviewWhenElapsed");
+            Call(first, "OnDisable");
+        });
+
+        Assert.That(ActivePreview, Is.Null);
+        Assert.That(PreviewPath(first), Is.Null);
+        Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(path), Is.Null);
+    }
+
     private void Play(Editor editor)
     {
         Call(editor, "Play", "Test preview", clip, 1f, 1f, (Action)(() => { }),
