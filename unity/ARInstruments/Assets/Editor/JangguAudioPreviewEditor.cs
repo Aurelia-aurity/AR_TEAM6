@@ -15,7 +15,7 @@ internal sealed class JangguSoundProfileEditor : Editor
     private static readonly MethodInfo StopPreview = AudioUtil?.GetMethod("StopAllPreviewClips", PreviewFlags);
 
     private string previewAssetPath;
-    private bool ownsEditorPreview;
+    private static JangguSoundProfileEditor activePreview;
     private string status;
 
     public JangguAudioPreview ScenePreview { get; set; }
@@ -200,8 +200,13 @@ internal sealed class JangguSoundProfileEditor : Editor
                 return;
             }
 
+            if (activePreview != null)
+            {
+                activePreview.StopPlayback();
+            }
+
             PlayPreview.Invoke(null, new object[] { clip, 0, false });
-            ownsEditorPreview = true;
+            activePreview = this;
             previewEnd = EditorApplication.timeSinceStartup + clip.length + 0.25;
             EditorApplication.update += FinishPreviewWhenElapsed;
         }
@@ -316,10 +321,10 @@ internal sealed class JangguSoundProfileEditor : Editor
     {
         EditorApplication.update -= FinishPreviewWhenElapsed;
 
-        if (ownsEditorPreview)
+        if (ReferenceEquals(activePreview, this))
         {
+            activePreview = null;
             StopPreview.Invoke(null, null);
-            ownsEditorPreview = false;
         }
 
         DeletePreviewAsset();
