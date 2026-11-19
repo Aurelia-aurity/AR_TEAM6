@@ -25,6 +25,6 @@ MonoBehaviour:
   - {fileID: 8300000, guid: b4bd58c2b39d5954d8f4b883c16903c0, type: 3}
   - {fileID: 8300000, guid: 7b438d69e48056445beb27028c935ed6, type: 3}
   deokVolumes: {x: 1, y: 1, z: 1}
-  kungVolumes: {x: 1.7, y: 1.7, z: 1.7}
+  kungVolumes: {x: 1.7, y: 1.7, z: 3.1}
   deokPitches: {x: 1, y: 1, z: 1}
   kungPitches: {x: 0.9, y: 0.9, z: 0.9}
