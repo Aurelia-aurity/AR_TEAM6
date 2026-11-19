@@ -4,6 +4,7 @@ public sealed class JangguSoundProfile : ScriptableObject
 {
     public const int StrengthCount = 3;
     public const int SampleCount = 6;
+    public const float PlaybackGain = 0.35f;
     public const float MaxGain = 5f;
     public const float MinPitch = 0.5f;
     public const float MaxPitch = 1.5f;

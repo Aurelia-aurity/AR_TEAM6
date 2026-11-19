@@ -168,7 +168,7 @@ public sealed class JangguAudioPreview : MonoBehaviour
 
     private static void PlayVoice(AudioSource voice, AudioClip clip, float gain, float pitch)
     {
-        voice.volume = 1f;
+        voice.volume = PlaybackGain;
         voice.pitch = pitch;
         voice.PlayOneShot(clip, gain);
     }

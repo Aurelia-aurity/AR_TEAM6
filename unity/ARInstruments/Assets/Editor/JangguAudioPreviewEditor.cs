@@ -187,6 +187,9 @@ internal sealed class JangguSoundProfileEditor : Editor
                 return;
             }
 
+            firstVolume *= JangguSoundProfile.PlaybackGain;
+            secondVolume *= JangguSoundProfile.PlaybackGain;
+
             // Unity의 에셋 미리듣기는 임포트된 클립을 사용한다.
             AudioClip clip = second == null && firstVolume == 1f && firstPitch == 1f
                 ? first
