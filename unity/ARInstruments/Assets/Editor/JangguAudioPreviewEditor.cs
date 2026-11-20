@@ -14,6 +14,9 @@ internal sealed class JangguSoundProfileEditor : Editor
         null, new[] { typeof(AudioClip), typeof(int), typeof(bool) }, null);
     private static readonly MethodInfo StopPreview = AudioUtil?.GetMethod("StopAllPreviewClips", PreviewFlags);
 
+    private const string AudioImportGuide =
+        "음원 에셋의 Inspector에서 Load Type을 Decompress On Load로 설정하고 Apply를 누르세요.";
+
     private string previewAssetPath;
     private static JangguSoundProfileEditor activePreview;
     private string status;
@@ -123,6 +126,9 @@ internal sealed class JangguSoundProfileEditor : Editor
         if (showReferences)
         {
             EditorGUILayout.PropertyField(deong);
+            EditorGUILayout.HelpBox(
+                "편집 모드에서 교체한 덩 음원을 미리 들으려면 " + AudioImportGuide,
+                MessageType.Info);
             EditorGUILayout.PropertyField(deok);
             EditorGUILayout.PropertyField(kung);
         }
@@ -191,12 +197,13 @@ internal sealed class JangguSoundProfileEditor : Editor
             secondVolume *= JangguSoundProfile.PlaybackGain;
 
             // Unity의 에셋 미리듣기는 임포트된 클립을 사용한다.
+            string mixError = null;
             AudioClip clip = second == null && firstVolume == 1f && firstPitch == 1f
                 ? first
-                : ImportPreviewMix(first, firstVolume, second, secondVolume, firstPitch, secondPitch);
+                : ImportPreviewMix(first, firstVolume, second, secondVolume, firstPitch, secondPitch, out mixError);
             if (clip == null)
             {
-                status = "원본의 PCM 데이터를 읽거나 재생용으로 변환할 수 없습니다.";
+                status = mixError ?? "원본의 PCM 데이터를 읽거나 재생용으로 변환할 수 없습니다.";
                 return;
             }
 
@@ -214,8 +221,10 @@ internal sealed class JangguSoundProfileEditor : Editor
         status = label;
     }
 
-    private AudioClip ImportPreviewMix(AudioClip first, float firstVolume, AudioClip second, float secondVolume, float firstPitch, float secondPitch)
+    private AudioClip ImportPreviewMix(AudioClip first, float firstVolume, AudioClip second, float secondVolume,
+        float firstPitch, float secondPitch, out string error)
     {
+        error = null;
         if (second != null && (first.channels != second.channels || first.frequency != second.frequency))
         {
             return null;
@@ -234,9 +243,16 @@ internal sealed class JangguSoundProfileEditor : Editor
                 continue;
             }
 
+            if (clip.loadType != AudioClipLoadType.DecompressOnLoad)
+            {
+                error = $"'{clip.name}' 음원을 미리 들을 수 없습니다. {AudioImportGuide}";
+                return null;
+            }
+
             var samples = new float[clip.samples * clip.channels];
             if (!clip.GetData(samples, 0))
             {
+                error = $"'{clip.name}' PCM 데이터를 읽을 수 없습니다. {AudioImportGuide}";
                 return null;
             }
 
