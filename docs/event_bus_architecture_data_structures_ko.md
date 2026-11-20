@@ -145,10 +145,10 @@ B는 `OnEnable`에서 구독한 다음 지정 ID의 상태를 조회합니다. �
 
 - **Module A (CV — 사용자가 현재 담당):** 위 계약의 영상·입력 상태를 발행하고, 추적 분석 결과는 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`로 전달합니다. CV 코드에는 어떠한 충돌 감지 코드도 **작성하지 마세요.**
 
-- **Module B (AR/UI):** 영상·추적·타격 이벤트를 구독하며 마커 검출·배치용 보정·저빈도 감시·재정렬과 악기 선택을 담당하고 배치·운영 상태를 발행합니다. `OnMalletsTracked`를 수신하여 화면의 커서 위치를 갱신하고, `OnValidHit`를 수신하여 시각 효과를 재생합니다.
+- **Module B (AR/UI):** 영상·추적·타격 이벤트를 구독하며 마커 검출·배치용 보정·저빈도 감시·재정렬과 악기 선택을 담당합니다. 최종 악기 루트를 계산해 모델 배치에 사용하고 그 값을 `PlayContextSnapshot`으로 발행합니다. B는 연주 상태도 알립니다. `OnMalletsTracked`를 수신하여 화면의 커서 위치를 갱신하고, `OnValidHit`를 수신하여 시각 효과를 재생합니다.
 
-- **Module C (Logic/Audio):** `OnMalletsTracked`를 구독합니다. 가상 악기의 `Collider` 목록을 관리하며, 이전 프레임과 현재 프레임의 위치를 잇는 선분이 `Collider`를 통과하는지 계산합니다(레이캐스트). 통과했다면 타격 강도를 계산하고 `GameEventBus.OnValidHit?.Invoke(hitData);`를 호출합니다.
+- **Module C (Logic/Audio):** `OnMalletsTracked`를 구독합니다. 가상 악기의 `Collider`를 B에서 받은 최종 악기 루트에 상대적으로 배치합니다. 이전 프레임과 현재 프레임의 위치를 잇는 선분이 `Collider`를 통과하는지 계산합니다(레이캐스트). 통과했다면 타격 강도를 계산하고 `GameEventBus.OnValidHit?.Invoke(hitData);`를 호출합니다.
 
 ## 5. 마커 배치·재정렬 추가 계약 (2026.11.17)
 
-[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 따른다. 카메라 계약의 프레임 식별·분석 버퍼 규칙을 보강하고 보정·배치·악기 전환·버전 포함 전달을 추가한다. 기존 타입 필드와 현재 런타임은 이번 문서 개정으로 변경되지 않는다. A/C는 동일 컨텍스트 적용 완료를 응답하며 B는 양쪽 준비 후 활성화한다. 상세 상태·소유권·실패·검증 규칙은 연결 문서를 기준으로 한다.
+[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 따른다. 카메라 계약의 프레임 식별·분석 버퍼 규칙을 보강하고 보정·배치·악기 전환·버전 포함 전달을 추가한다. 기존 타입 필드와 현재 런타임은 이번 문서 개정으로 변경되지 않는다. B의 모델과 C의 타격 영역은 `PlayContextSnapshot.InstrumentRootTransform`을 공유한다. B의 모델 배치가 준비되고 A/C가 동일 컨텍스트 버전의 적용 완료를 응답하면 B가 활성화한다. 루트 계산과 적용·검증 규칙은 공통 계약을 따른다.
