@@ -65,3 +65,7 @@ AR_TEAM6/                         # 현재 저장소 폴더: TEAM6
 상세한 데이터 구조와 이벤트 계약은
 [영문 계약 문서](docs/event_bus_architecture_data_structures_en.md)와
 [한국어 계약 문서](docs/event_bus_architecture_data_structures_ko.md)를 참고하세요.
+
+## 마커 배치 설계
+
+[마커 배치·감시·재정렬 계약](docs/marker_placement_contracts_ko.md): 고정 마커 기반 단일 악기 배치와 교체, B의 저빈도 감시 및 A/B/C 공통 보정 적용을 정의합니다. 문서상 목표 계약이며 런타임 구현은 후속 작업입니다.

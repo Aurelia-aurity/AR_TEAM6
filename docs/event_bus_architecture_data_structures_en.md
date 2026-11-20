@@ -92,7 +92,7 @@ This additive contract leaves `MalletState`, `HitEvent` and existing tracking ev
 - A creates a fresh `Guid.NewGuid()` for each start attempt, including failed attempts. All events for that attempt share the ID; `Guid.Empty` is invalid. GUIDs identify sessions, not their chronological order.
 - Both times use `Time.realtimeSinceStartupAsDouble * 1000` in milliseconds. `ReceivedAtMs` is when A observes a new frame; `ChangedAtMs` is when the input state changes. Neither is sensor capture time or UTC.
 - Rotation is clockwise, restricted to 0/90/180/270 degrees. Apply vertical correction in texture space before rotation. B's user mirror mode is separate and does not change tracking coordinates.
-- The texture is a borrowed, mutable live reference, not a copied frame image. A owns creation, capture, stopping and destruction. B retains it only for display.
+- The texture is a borrowed, mutable live reference, not a copied frame image. A owns creation, capture, stopping and destruction. B borrows it for display and analysis copies; B owns the separate analysis buffers.
 
 | State | Meaning | B adapter behavior |
 | --- | --- | --- |
@@ -122,5 +122,21 @@ B subscribes in `OnEnable`, then queries its camera state. If absent, wait; even
 Failure publishers call `PublishTrackingLost(id, observationTimestampMs)`. The timestamp uses the same `Time.realtimeSinceStartupAsDouble * 1000` clock as the observation's `MalletState.TimestampMs`; do not substitute callback arrival time. The existing `OnTrackingLost(int)` signature remains available. B's cursors order `OnTrackingLostAt` against tracked samples and do not let an unversioned legacy notification override ordered state.
 
 *   **Module A (CV):** Publishes frames and input state under the contract above, and sends tracking analysis through `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`. Do not implement collision detection in CV code.
-*   **Module B (AR/UI):** 只负责监听总线。监听 `OnMalletsTracked` 更新画面上的光标位置；监听 `OnValidHit` 播放视觉特效。
-*   **Module C (Logic/Audio):** 监听 `OnMalletsTracked`。维护一个虚拟乐器的 Collider 列表。计算上一帧和当前帧的线段是否穿过 Collider（射线检测）。如果穿过，计算力度，并调用 `GameEventBus.OnValidHit?.Invoke(hitData);`。
+*   **Module B (AR/UI):** Owns marker detection, placement calibration, low-rate monitoring, realignment and instrument selection. B computes the final instrument root, uses it to place the model, and publishes it in `PlayContextSnapshot`. B also publishes the play state. 监听 `OnMalletsTracked` 更新画面上的光标位置；监听 `OnValidHit` 播放视觉特效。
+*   **Module C (Logic/Audio):** Uses the final instrument root from B to place each collider relative to that root. 监听 `OnMalletsTracked`。维护一个虚拟乐器的 Collider 列表。计算上一帧和当前帧的线段是否穿过 Collider（射线检测）。如果穿过，计算力度，并调用 `GameEventBus.OnValidHit?.Invoke(hitData);`。
+
+## 5. Marker placement and realignment contract (2026-11-17)
+
+The [shared marker contract](marker_placement_contracts_ko.md) is the authoritative detailed specification for both language editions; it describes target behavior, not implemented APIs. One fixed physical marker anchors one active instrument, independently of instrument type. B detects and monitors the marker using A-owned frames; A owns capture and mallet tracking; C owns hit detection and audio.
+
+Add session-local FrameSequence identification and immutable analysis copies. Never block the frame callback with detection or access Unity textures arbitrarily from worker threads. Bound queued work and discard obsolete session/calibration results. Keep the existing MalletState/HitEvent fields; propose versioned envelopes for production tracking/hit delivery without duplicate legacy consumption. InstrumentTypeId differs from HitEvent.InstrumentId (zone ID).
+
+Keep marker-world placement and user offsets fixed. Low-rate observations compare against the last confirmed baseline; sustained position/angle changes trigger realignment. Temporary occlusion is not camera motion. After confirmed motion, occlusion keeps recovery pending. Update camera/world calibration rather than relocating the instrument. Resolution/lens changes and multi-camera calibration require appropriate validation.
+
+B's model and C's colliders use the same `PlayContextSnapshot.InstrumentRootTransform`. This value contains the final Unity world position and rotation plus the scale along the instrument's local axes. The shared marker contract defines the composition order, axes, and pivot.
+
+States: Unplaced, Placing, Active, Realigning, Applying, RecoveryRequired. Only Active with fresh valid versioned tracking permits hits. B publishes state and proposed immutable context with ContextVersion; A/C acknowledge the same version; B activates that version once its model placement is ready and both acknowledgments report success. Reset tracking history and hit locks. Timeout, failure or required consumer departure suspends play. Late subscribers query state/context but must prepare before resuming. Clear state/cancel old work on a new runtime session.
+
+Proposed events: OnPlayStateChanged, OnPlayContextProposed, OnContextApplyCompleted, OnPlayContextActivated. Proposed data: MarkerDefinition, MarkerObservation (normally internal to B), CalibrationSnapshot, InstrumentDefinition, PlayContextSnapshot, ContextApplyResult. Use event Action<T> with publishing methods and main-thread Unity operations. See the shared contract for fields, ownership, sequencing and test cases.
+
+Library, marker dimensions/dictionary, polling rate, resolution, quality thresholds, stability duration, long-occlusion policy, apply timeout and error/detection-latency limits remain pending measurement. Low-rate monitoring cannot guarantee instantaneous movement detection.
