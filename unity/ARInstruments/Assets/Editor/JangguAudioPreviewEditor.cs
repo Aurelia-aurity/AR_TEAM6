@@ -126,13 +126,28 @@ internal sealed class JangguSoundProfileEditor : Editor
         if (showReferences)
         {
             EditorGUILayout.PropertyField(deong);
-            EditorGUILayout.HelpBox(
-                "편집 모드에서 교체한 덩 음원을 미리 들으려면 " + AudioImportGuide,
-                MessageType.Info);
+            if (!Application.isPlaying)
+            {
+                for (int strength = 0; strength < deong.arraySize; strength++)
+                {
+                    AudioClip clip = GetClip(deong, strength);
+                    if (clip != null && RequiresPreviewImportSettings(clip))
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"'{clip.name}' 음원의 Load Type이 {clip.loadType}입니다. {AudioImportGuide}",
+                            MessageType.Warning);
+                    }
+                }
+            }
             EditorGUILayout.PropertyField(deok);
             EditorGUILayout.PropertyField(kung);
         }
         serializedObject.ApplyModifiedProperties();
+    }
+
+    private static bool RequiresPreviewImportSettings(AudioClip clip)
+    {
+        return clip.loadType != AudioClipLoadType.DecompressOnLoad;
     }
 
     private int DrawSampleSettings(string stroke, string volumeProperty, string pitchProperty, int offset)
@@ -243,7 +258,7 @@ internal sealed class JangguSoundProfileEditor : Editor
                 continue;
             }
 
-            if (clip.loadType != AudioClipLoadType.DecompressOnLoad)
+            if (RequiresPreviewImportSettings(clip))
             {
                 error = $"'{clip.name}' 음원을 미리 들을 수 없습니다. {AudioImportGuide}";
                 return null;
