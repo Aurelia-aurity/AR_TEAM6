@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using static JangguSoundProfile;
@@ -21,16 +22,11 @@ public sealed class JangguAudioPreview : MonoBehaviour
     private readonly List<AudioSource> primaryVoices = new List<AudioSource>(InitialVoicesPerSource);
     private readonly List<AudioSource> secondaryVoices = new List<AudioSource>(InitialVoicesPerSource);
 
+    private readonly List<JangguOutputLimiter> previewLimiters = new();
+    private Coroutine pendingLimiterAcquisition;
+
     private void Awake()
     {
-        foreach (var listener in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
-        {
-            if (listener.isActiveAndEnabled && listener.GetComponent<JangguOutputLimiter>() == null)
-            {
-                listener.gameObject.AddComponent<JangguOutputLimiter>();
-            }
-        }
-
         if (profile != null)
         {
             sessionProfile = Instantiate(profile);
@@ -40,9 +36,76 @@ public sealed class JangguAudioPreview : MonoBehaviour
         PrewarmVoices(secondarySource, secondaryVoices);
     }
 
+    private void OnEnable()
+    {
+        if (!AcquireLimiters())
+        {
+            pendingLimiterAcquisition = StartCoroutine(AcquireLimitersAfterRemoval());
+        }
+    }
+
+    private bool AcquireLimiters()
+    {
+        bool allAvailable = true;
+        foreach (var listener in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
+        {
+            if (!listener.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            var limiter = listener.GetComponent<JangguOutputLimiter>();
+            if (limiter == null)
+            {
+                limiter = listener.gameObject.AddComponent<JangguOutputLimiter>();
+                limiter.PreviewUsers = 1;
+                previewLimiters.Add(limiter);
+            }
+            else if (limiter.PreviewUsers < 0)
+            {
+                // Wait for Unity to remove the old component before adding a replacement.
+                allAvailable = false;
+            }
+            else if (limiter.PreviewUsers > 0 && !previewLimiters.Contains(limiter))
+            {
+                limiter.PreviewUsers++;
+                previewLimiters.Add(limiter);
+            }
+        }
+
+        return allAvailable;
+    }
+
+    private IEnumerator AcquireLimitersAfterRemoval()
+    {
+        do
+        {
+            yield return null;
+        }
+        while (!AcquireLimiters());
+
+        pendingLimiterAcquisition = null;
+    }
+
     private void OnDisable()
     {
         Stop();
+        if (pendingLimiterAcquisition != null)
+        {
+            StopCoroutine(pendingLimiterAcquisition);
+            pendingLimiterAcquisition = null;
+        }
+
+        foreach (var limiter in previewLimiters)
+        {
+            if (limiter != null && --limiter.PreviewUsers == 0)
+            {
+                limiter.PreviewUsers = -1;
+                Destroy(limiter);
+            }
+        }
+
+        previewLimiters.Clear();
     }
 
     private void OnDestroy()
