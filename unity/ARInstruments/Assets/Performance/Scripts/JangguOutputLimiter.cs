@@ -7,6 +7,9 @@ public sealed class JangguOutputLimiter : MonoBehaviour
     private readonly JangguPeakLimiter limiter = new JangguPeakLimiter();
     private volatile int sampleRate;
 
+    // Zero means scene-owned. Negative means scheduled for destruction.
+    internal int PreviewUsers { get; set; }
+
     private void Awake()
     {
         sampleRate = AudioSettings.outputSampleRate;

@@ -30,7 +30,7 @@
 공통 감쇠 후 합쳐진 신호에는 [JangguPeakLimiter](../unity/ARInstruments/Assets/Performance/Scripts/JangguPeakLimiter.cs)를 적용한다. 샘플 피크의 상한은 `0.95`이며, 상한을 넘는 순간 모든 채널에 같은 감쇠를 적용한다. 피크가 지나가면 감쇠를 서서히 해제한다. 회복 시정수는 `50ms`로, 완전히 복원되는 데 걸리는 시간과는 다르다. 리미터가 작동하는 구간에서는 타격의 세기 차이와 음색이 달라질 수 있다.
 
 - 편집 모드에서는 미리듣기 버튼을 누르면 음량·피치를 반영해 샘플을 합친 뒤, 전체 배열을 리미터로 처리하고 16비트 PCM WAV로 변환한다.
-- Play Mode에서는 `JangguAudioPreview.Awake()`가 활성 AudioListener에 [JangguOutputLimiter](../unity/ARInstruments/Assets/Performance/Scripts/JangguOutputLimiter.cs)를 추가한다. Unity의 오디오 스레드가 `OnAudioFilterRead()`를 호출할 때마다 샘플 묶음을 처리하며, 감쇠 상태를 다음 묶음으로 이어 간다.
+- Play Mode에서는 프리뷰가 활성화될 때 활성 AudioListener에 [JangguOutputLimiter](../unity/ARInstruments/Assets/Performance/Scripts/JangguOutputLimiter.cs)가 없으면 추가한다. 프리뷰가 추가한 리미터는 마지막 프리뷰를 비활성화하거나 닫을 때 제거한다. Unity의 오디오 스레드가 `OnAudioFilterRead()`를 호출할 때마다 샘플 묶음을 처리하며, 감쇠 상태를 다음 묶음으로 이어 간다.
 - Play Mode의 리미터는 해당 AudioListener의 최종 출력에 적용된다. 같은 리스너로 들리는 음악과 다른 효과음도 함께 제한된다.
 
 ## Game 탭에서 비교하기
