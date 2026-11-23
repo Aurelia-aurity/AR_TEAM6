@@ -14,6 +14,9 @@ internal sealed class JangguSoundProfileEditor : Editor
         null, new[] { typeof(AudioClip), typeof(int), typeof(bool) }, null);
     private static readonly MethodInfo StopPreview = AudioUtil?.GetMethod("StopAllPreviewClips", PreviewFlags);
 
+    private const string AudioImportGuide =
+        "음원 에셋의 Inspector에서 Load Type을 Decompress On Load로 설정하고 Apply를 누르세요.";
+
     private string previewAssetPath;
     private static JangguSoundProfileEditor activePreview;
     private string status;
@@ -123,10 +126,47 @@ internal sealed class JangguSoundProfileEditor : Editor
         if (showReferences)
         {
             EditorGUILayout.PropertyField(deong);
+            if (!Application.isPlaying)
+            {
+                for (int strength = 0; strength < deong.arraySize; strength++)
+                {
+                    AudioClip clip = GetClip(deong, strength);
+                    if (clip != null && RequiresPreviewImportSettings(clip))
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"'{clip.name}' 음원의 Load Type이 {clip.loadType}입니다. {AudioImportGuide}",
+                            MessageType.Warning);
+                    }
+                }
+            }
             EditorGUILayout.PropertyField(deok);
             EditorGUILayout.PropertyField(kung);
         }
         serializedObject.ApplyModifiedProperties();
+    }
+
+    private static bool RequiresPreviewImportSettings(AudioClip clip)
+    {
+        if (clip.loadType == AudioClipLoadType.DecompressOnLoad)
+        {
+            return false;
+        }
+
+        if (clip.loadType == AudioClipLoadType.Streaming)
+        {
+            return true;
+        }
+
+        // PCM remains readable in Compressed In Memory. Respect platform overrides
+        // rather than assuming that the default compression format is in use.
+        var importer = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(clip)) as AudioImporter;
+        if (importer == null)
+        {
+            return true;
+        }
+
+        var platform = BuildPipeline.GetBuildTargetGroup(EditorUserBuildSettings.activeBuildTarget);
+        return importer.GetOverrideSampleSettings(platform).compressionFormat != AudioCompressionFormat.PCM;
     }
 
     private int DrawSampleSettings(string stroke, string volumeProperty, string pitchProperty, int offset)
@@ -191,12 +231,13 @@ internal sealed class JangguSoundProfileEditor : Editor
             secondVolume *= JangguSoundProfile.PlaybackGain;
 
             // Unity의 에셋 미리듣기는 임포트된 클립을 사용한다.
+            string mixError = null;
             AudioClip clip = second == null && firstVolume == 1f && firstPitch == 1f
                 ? first
-                : ImportPreviewMix(first, firstVolume, second, secondVolume, firstPitch, secondPitch);
+                : ImportPreviewMix(first, firstVolume, second, secondVolume, firstPitch, secondPitch, out mixError);
             if (clip == null)
             {
-                status = "원본의 PCM 데이터를 읽거나 재생용으로 변환할 수 없습니다.";
+                status = mixError ?? "원본의 PCM 데이터를 읽거나 재생용으로 변환할 수 없습니다.";
                 return;
             }
 
@@ -214,8 +255,10 @@ internal sealed class JangguSoundProfileEditor : Editor
         status = label;
     }
 
-    private AudioClip ImportPreviewMix(AudioClip first, float firstVolume, AudioClip second, float secondVolume, float firstPitch, float secondPitch)
+    private AudioClip ImportPreviewMix(AudioClip first, float firstVolume, AudioClip second, float secondVolume,
+        float firstPitch, float secondPitch, out string error)
     {
+        error = null;
         if (second != null && (first.channels != second.channels || first.frequency != second.frequency))
         {
             return null;
@@ -234,9 +277,33 @@ internal sealed class JangguSoundProfileEditor : Editor
                 continue;
             }
 
+            if (RequiresPreviewImportSettings(clip))
+            {
+                error = $"'{clip.name}' 음원을 미리 들을 수 없습니다. {AudioImportGuide}";
+                return null;
+            }
+
+            if (clip.loadState == AudioDataLoadState.Unloaded)
+            {
+                clip.LoadAudioData();
+            }
+
+            if (clip.loadState == AudioDataLoadState.Loading)
+            {
+                error = $"'{clip.name}' 음원을 로딩 중입니다. 로딩이 완료된 후 다시 시도해 주세요.";
+                return null;
+            }
+
+            if (clip.loadState != AudioDataLoadState.Loaded)
+            {
+                error = $"'{clip.name}' 음원 데이터를 로드하지 못했습니다. 음원 파일과 Console을 확인해 주세요.";
+                return null;
+            }
+
             var samples = new float[clip.samples * clip.channels];
             if (!clip.GetData(samples, 0))
             {
+                error = $"'{clip.name}' PCM 데이터를 읽을 수 없습니다. {AudioImportGuide}";
                 return null;
             }
 
