@@ -147,7 +147,26 @@ internal sealed class JangguSoundProfileEditor : Editor
 
     private static bool RequiresPreviewImportSettings(AudioClip clip)
     {
-        return clip.loadType != AudioClipLoadType.DecompressOnLoad;
+        if (clip.loadType == AudioClipLoadType.DecompressOnLoad)
+        {
+            return false;
+        }
+
+        if (clip.loadType == AudioClipLoadType.Streaming)
+        {
+            return true;
+        }
+
+        // PCM remains readable in Compressed In Memory. Respect platform overrides
+        // rather than assuming that the default compression format is in use.
+        var importer = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(clip)) as AudioImporter;
+        if (importer == null)
+        {
+            return true;
+        }
+
+        var platform = BuildPipeline.GetBuildTargetGroup(EditorUserBuildSettings.activeBuildTarget);
+        return importer.GetOverrideSampleSettings(platform).compressionFormat != AudioCompressionFormat.PCM;
     }
 
     private int DrawSampleSettings(string stroke, string volumeProperty, string pitchProperty, int offset)
