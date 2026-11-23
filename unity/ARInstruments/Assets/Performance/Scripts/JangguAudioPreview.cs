@@ -209,7 +209,7 @@ public sealed class JangguAudioPreview : MonoBehaviour
 
     private void Play(AudioSource template, List<AudioSource> voices, AudioClip clip, float gain, float pitch)
     {
-        if (template == null || clip == null || gain <= 0f)
+        if (!isActiveAndEnabled || template == null || clip == null || gain <= 0f)
         {
             return;
         }
