@@ -1,5 +1,5 @@
 {
     "name": "ARInstruments.Performance",
-    "references": ["ARInstruments.Shared"],
+    "references": ["ARInstruments.Shared", "UnityEngine.UI"],
     "autoReferenced": true
 }

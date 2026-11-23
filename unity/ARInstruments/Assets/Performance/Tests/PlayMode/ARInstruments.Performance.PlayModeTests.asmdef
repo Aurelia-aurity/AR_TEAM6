@@ -1,6 +1,6 @@
 {
     "name": "ARInstruments.Performance.PlayModeTests",
-    "references": ["ARInstruments.Shared", "Unity.ugui"],
+    "references": ["ARInstruments.Shared", "ARInstruments.Performance", "Unity.ugui"],
     "optionalUnityReferences": ["TestAssemblies"],
     "autoReferenced": false
 }
