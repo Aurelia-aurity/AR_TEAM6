@@ -1,9 +1,11 @@
 using System;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 public sealed class JangguPreviewImportTests
 {
@@ -73,6 +75,51 @@ public sealed class JangguPreviewImportTests
         importer.SaveAndReimport();
 
         AssertPreview(allowed);
+    }
+
+    [UnityTest]
+    public IEnumerator BackgroundLoading_PreviewCanRetryWithoutImportChanges()
+    {
+        var importer = (AudioImporter)AssetImporter.GetAtPath(fixturePath);
+        importer.ClearSampleSettingOverride(platform);
+        var settings = importer.defaultSampleSettings;
+        settings.loadType = AudioClipLoadType.DecompressOnLoad;
+        settings.compressionFormat = AudioCompressionFormat.Vorbis;
+        settings.preloadAudioData = false;
+        importer.defaultSampleSettings = settings;
+        importer.loadInBackground = true;
+        importer.SaveAndReimport();
+
+        var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(fixturePath);
+        Assert.That(clip.UnloadAudioData(), Is.True);
+        Assert.That(clip.loadState, Is.EqualTo(AudioDataLoadState.Unloaded));
+
+        object[] arguments = { clip, 0.35f, null, 0f, 1f, 1f, null };
+        var mixed = (AudioClip)editorType.GetMethod("ImportPreviewMix", InstanceFlags).Invoke(editor, arguments);
+        if (mixed == null)
+        {
+            Assert.That((string)arguments[6], Does.Contain("로딩"));
+            Assert.That((string)arguments[6], Does.Contain("다시 시도"));
+            Assert.That((string)arguments[6], Does.Not.Contain("Decompress On Load"));
+            Assert.That(editorType.GetField("previewAssetPath", InstanceFlags).GetValue(editor), Is.Null);
+        }
+        else
+        {
+            // A short clip can finish background loading within the first request.
+            Assert.That(arguments[6], Is.Null);
+        }
+
+        double deadline = EditorApplication.timeSinceStartup + 10;
+        while (clip.loadState == AudioDataLoadState.Loading && EditorApplication.timeSinceStartup < deadline)
+        {
+            yield return null;
+        }
+        Assert.That(clip.loadState, Is.EqualTo(AudioDataLoadState.Loaded));
+
+        editorType.GetMethod("StopPlayback", InstanceFlags).Invoke(editor, null);
+        AssertPreview(true);
+        Assert.That(clip.loadInBackground, Is.True);
+        Assert.That(clip.preloadAudioData, Is.False);
     }
 
     private void AssertPreview(bool allowed)

@@ -283,6 +283,23 @@ internal sealed class JangguSoundProfileEditor : Editor
                 return null;
             }
 
+            if (clip.loadState == AudioDataLoadState.Unloaded)
+            {
+                clip.LoadAudioData();
+            }
+
+            if (clip.loadState == AudioDataLoadState.Loading)
+            {
+                error = $"'{clip.name}' 음원을 로딩 중입니다. 로딩이 완료된 후 다시 시도해 주세요.";
+                return null;
+            }
+
+            if (clip.loadState != AudioDataLoadState.Loaded)
+            {
+                error = $"'{clip.name}' 음원 데이터를 로드하지 못했습니다. 음원 파일과 Console을 확인해 주세요.";
+                return null;
+            }
+
             var samples = new float[clip.samples * clip.channels];
             if (!clip.GetData(samples, 0))
             {
