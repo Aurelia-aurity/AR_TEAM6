@@ -6,6 +6,8 @@ public struct CameraFrameData
 {
     public string CameraId;
     public Guid SessionId;
+    // A assigns this at acquisition, starting at 1 per camera session (0 for legacy frames).
+    public long FrameSequence;
     public Texture Texture;
     // Clockwise degrees: 0, 90, 180 or 270. Vertical correction precedes rotation.
     public int ClockwiseRotation;

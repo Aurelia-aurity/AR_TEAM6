@@ -14,6 +14,7 @@ using UnityEngine;
 // 1.1 琴槌实时状态 (由 Module A: CV 追踪 每帧产生)
 public struct MalletState
 {
+    public long ContextVersion;
     public int MalletId;         // 琴槌标识符 (0 = 左手, 1 = 右手)
     public Vector3 Position;     // 琴槌端点坐标 (X, Y, Z深度)
     public Vector3 Velocity;     // 当前运动矢量 (方向与速度)
@@ -24,6 +25,7 @@ public struct MalletState
 // 1.2 物理打击事件 (由 Module C: 逻辑判定 产生，触发音频与特效)
 public struct HitEvent
 {
+    public long ContextVersion;
     public string InstrumentId;  // 被击中的乐器区域ID (e.g., "Snare_1", "Cymbal_Left")
     public Vector3 HitPosition;  // 发生碰撞的精确坐标
     public float HitForce;       // 打击力度 (0.0f ~ 1.0f，映射到音频音量)
@@ -81,11 +83,11 @@ public static class GameEventBus
 
 ## 3. Camera frame and input state contract (step 2)
 
-This additive contract leaves `MalletState`, `HitEvent` and existing tracking events unchanged. Sources: `Shared/Scripts/CameraFrameData.cs`, `CameraInputStateData.cs`, and `GameEventBus.cs`. See also the [Korean contract](event_bus_architecture_data_structures_ko.md). Publisher integration, B's adapter and scene wiring are subsequent steps.
+Tracking and hit event signatures are preserved. Sources: `Shared/Scripts/CameraFrameData.cs`, `CameraInputStateData.cs`, and `GameEventBus.cs`. See also the [Korean contract](event_bus_architecture_data_structures_ko.md). Publisher integration, B's adapter and scene wiring are subsequent steps.
 
 | Payload | Fields |
 | --- | --- |
-| `CameraFrameData` | `string CameraId`, `Guid SessionId`, `Texture Texture`, `int ClockwiseRotation`, `bool VerticallyMirrored`, `double ReceivedAtMs` |
+| `CameraFrameData` | `string CameraId`, `Guid SessionId`, `long FrameSequence`, `Texture Texture`, `int ClockwiseRotation`, `bool VerticallyMirrored`, `double ReceivedAtMs` |
 | `CameraInputStateData` | `string CameraId`, `Guid SessionId`, `string DeviceName`, `CameraInputState State`, `double ChangedAtMs`, `CameraInputError Error`, `string Description` |
 
 - `CameraId` is a nonempty, case-sensitive logical Inspector ID such as `primary`, unique among active publishers. It is independent of the physical device name. `DeviceName` is the selected device name, empty before selection.
@@ -129,7 +131,7 @@ Failure publishers call `PublishTrackingLost(id, observationTimestampMs)`. The t
 
 The [shared marker contract](marker_placement_contracts_ko.md) is the authoritative detailed specification for both language editions; it describes target behavior, not implemented APIs. One fixed physical marker anchors one active instrument, independently of instrument type. B detects and monitors the marker using A-owned frames; A owns capture and mallet tracking; C owns hit detection and audio.
 
-Add session-local FrameSequence identification and immutable analysis copies. Never block the frame callback with detection or access Unity textures arbitrarily from worker threads. Bound queued work and discard obsolete session/calibration results. Keep the existing MalletState/HitEvent fields; propose versioned envelopes for production tracking/hit delivery without duplicate legacy consumption. InstrumentTypeId differs from HitEvent.InstrumentId (zone ID).
+Add session-local FrameSequence identification and immutable analysis copies. Never block the frame callback with detection or access Unity textures arbitrarily from worker threads. Bound queued work and discard obsolete session/calibration results. A assigns FrameSequence at acquisition, starting at 1 per camera session. MalletState carries the ContextVersion captured at dispatch, and HitEvent copies it from the accepted sample. Consumers discard inactive versions. B owns camera intrinsics, the distortion model and reference-camera placement. A verifies and finalizes multi-camera world alignment before acknowledging the version. InstrumentTypeId differs from HitEvent.InstrumentId (zone ID).
 
 Keep marker-world placement and user offsets fixed. Low-rate observations compare against the last confirmed baseline; sustained position/angle changes trigger realignment. Temporary occlusion is not camera motion. After confirmed motion, occlusion keeps recovery pending. Update camera/world calibration rather than relocating the instrument. Resolution/lens changes and multi-camera calibration require appropriate validation.
 

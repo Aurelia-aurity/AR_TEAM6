@@ -6,6 +6,26 @@ using UnityEngine;
 // Publish on the Unity main thread; unsubscribe when components are disabled.
 public static class GameEventBus
 {
+    // Zero supports existing stand-alone previews. B begins a positive version before applying it.
+    public static long ContextVersion { get; private set; }
+    public static bool IsContextActive { get; private set; } = true;
+
+    public static void BeginContext(long version)
+    {
+        if (version <= ContextVersion)
+            throw new ArgumentOutOfRangeException(nameof(version));
+        ContextVersion = version;
+        IsContextActive = false;
+    }
+
+    public static void ActivateContext(long version)
+    {
+        if (version == ContextVersion && version > 0)
+            IsContextActive = true;
+    }
+
+    public static bool IsActiveContext(long version) => IsContextActive && version == ContextVersion;
+
     // Camera publishers must use the publish methods so cached state stays in sync.
     public static event Action<CameraFrameData> OnCameraFrameReceived;
     public static event Action<CameraInputStateData> OnCameraInputStateChanged;
@@ -35,6 +55,8 @@ public static class GameEventBus
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetCameraInput()
     {
+        ContextVersion = 0;
+        IsContextActive = true;
         cameraStates.Clear();
         OnCameraFrameReceived = null;
         OnCameraInputStateChanged = null;

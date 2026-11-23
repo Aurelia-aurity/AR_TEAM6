@@ -14,6 +14,7 @@ using UnityEngine;
 // 1.1 말렛의 실시간 상태 (Module A: CV 추적에서 매 프레임 생성)
 public struct MalletState
 {
+    public long ContextVersion;
     public int MalletId;         // 말렛 식별자 (0 = 왼손, 1 = 오른손)
     public Vector3 Position;     // 말렛 끝부분의 좌표 (X, Y, Z 깊이)
     public Vector3 Velocity;     // 현재 운동 벡터 (방향 및 속도)
@@ -24,6 +25,7 @@ public struct MalletState
 // 1.2 물리적 타격 이벤트 (Module C: 판정 로직에서 생성하며, 오디오 및 시각 효과를 실행)
 public struct HitEvent
 {
+    public long ContextVersion;
     public string InstrumentId;  // 타격된 악기 영역의 ID (예: "Snare_1", "Cymbal_Left")
     public Vector3 HitPosition;  // 충돌이 발생한 정확한 좌표
     public float HitForce;       // 타격 강도 (0.0f ~ 1.0f, 오디오 음량에 매핑)
@@ -91,6 +93,7 @@ public static class GameEventBus
 | 데이터 | 필드 | 의미 |
 | --- | --- | --- |
 | `CameraFrameData` | `string CameraId`, `Guid SessionId` | 논리 카메라 ID와 시작 시도 식별자 |
+| | `long FrameSequence` | A가 획득 시 부여하는 카메라·세션별 순번. 1부터 증가하며 0은 기존 입력의 미지정 값 |
 | | `Texture Texture` | A 소유의 사용 가능한 영상 Texture 참조 |
 | | `int ClockwiseRotation`, `bool VerticallyMirrored` | 시계 방향 회전각(0/90/180/270), 원본 상하 반전 보정 |
 | | `double ReceivedAtMs` | A가 새 프레임을 확인한 시각 |
@@ -151,4 +154,4 @@ B는 `OnEnable`에서 구독한 다음 지정 ID의 상태를 조회합니다. �
 
 ## 5. 마커 배치·재정렬 추가 계약 (2026.11.17)
 
-[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 따른다. 카메라 계약의 프레임 식별·분석 버퍼 규칙을 보강하고 보정·배치·악기 전환·버전 포함 전달을 추가한다. 기존 타입 필드와 현재 런타임은 이번 문서 개정으로 변경되지 않는다. B의 모델과 C의 타격 영역은 `PlayContextSnapshot.InstrumentRootTransform`을 공유한다. B의 모델 배치가 준비되고 A/C가 동일 컨텍스트 버전의 적용 완료를 응답하면 B가 활성화한다. 루트 계산과 적용·검증 규칙은 공통 계약을 따른다.
+[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 따른다. 카메라 계약의 프레임 식별·분석 버퍼 규칙을 보강하고 보정·배치·악기 전환·버전 포함 전달을 추가한다. A가 분석 시작 시 확보한 `MalletState.ContextVersion`을 C가 유효 타격의 `HitEvent.ContextVersion`으로 전달한다. 판정·오디오·시각 효과는 활성 버전만 수락한다. B는 카메라별 내부 파라미터와 왜곡 모델 및 기준 카메라 배치를 담당하고, A는 복수 카메라의 월드 정합을 검증·확정한 뒤 적용 성공을 응답한다. B의 모델과 C의 타격 영역은 `PlayContextSnapshot.InstrumentRootTransform`을 공유한다. B의 모델 배치가 준비되고 A/C가 동일 컨텍스트 버전의 적용 완료를 응답하면 B가 활성화한다. 루트 계산과 적용·검증 규칙은 공통 계약을 따른다.
