@@ -26,6 +26,41 @@ public static class GameEventBus
 
     public static bool IsActiveContext(long version) => IsContextActive && version == ContextVersion;
 
+    public static bool IsSessionRunning { get; private set; }
+    public static InstrumentType SelectedInstrument { get; private set; } = InstrumentType.Janggu;
+
+    public static event Action<RunSessionRequest> OnRunSessionRequested;
+    public static event Action<RunSessionResult> OnRunSessionCompleted;
+    public static event Action<bool> OnSessionRunningChanged;
+    public static event Action<InstrumentType> OnInstrumentSelected;
+
+    public static void PublishRunSessionRequest(RunSessionRequest request)
+    {
+        OnRunSessionRequested?.Invoke(request);
+    }
+
+    public static void PublishRunSessionCompleted(RunSessionResult result)
+    {
+        OnRunSessionCompleted?.Invoke(result);
+    }
+
+    public static void PublishSessionRunningChanged(bool isRunning)
+    {
+        IsSessionRunning = isRunning;
+        OnSessionRunningChanged?.Invoke(isRunning);
+    }
+
+    public static void PublishInstrumentSelected(InstrumentType instrument)
+    {
+        if (!Enum.IsDefined(typeof(InstrumentType), instrument))
+        {
+            throw new ArgumentOutOfRangeException(nameof(instrument));
+        }
+
+        SelectedInstrument = instrument;
+        OnInstrumentSelected?.Invoke(instrument);
+    }
+
     // Camera publishers must use the publish methods so cached state stays in sync.
     public static event Action<CameraFrameData> OnCameraFrameReceived;
     public static event Action<CameraInputStateData> OnCameraInputStateChanged;
@@ -68,7 +103,13 @@ public static class GameEventBus
     {
         ContextVersion = 0;
         IsContextActive = true;
+        IsSessionRunning = false;
+        SelectedInstrument = InstrumentType.Janggu;
         cameraStates.Clear();
+        OnRunSessionRequested = null;
+        OnRunSessionCompleted = null;
+        OnSessionRunningChanged = null;
+        OnInstrumentSelected = null;
         OnCameraFrameReceived = null;
         OnCameraInputStateChanged = null;
         OnMalletsTracked = null;
