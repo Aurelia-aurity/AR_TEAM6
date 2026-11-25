@@ -1,11 +1,15 @@
 using UnityEngine;
 
-public class FPSCounter : MonoBehaviour
+public sealed class FPSCounter : MonoBehaviour
 {
     private float deltaTime;
     private float timer;
     private const float LogInterval = 1.0f;
+    private const float MinHealthyFps = 55.0f;
 
+    public float CurrentFps { get; private set; } = 60.0f;
+
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Init()
     {
@@ -13,6 +17,7 @@ public class FPSCounter : MonoBehaviour
         go.AddComponent<FPSCounter>();
         DontDestroyOnLoad(go);
     }
+#endif
 
     private void Update()
     {
@@ -21,8 +26,13 @@ public class FPSCounter : MonoBehaviour
 
         if (timer >= LogInterval)
         {
-            float fps = 1.0f / deltaTime;
-            Debug.Log($"[Performance Warning] Current Fps: {fps:F1}");
+            CurrentFps = deltaTime > 0.0001f ? 1.0f / deltaTime : 60.0f;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            if (CurrentFps < MinHealthyFps)
+            {
+                Debug.LogWarning($"[Performance Warning] Low FPS: {CurrentFps:F1}");
+            }
+#endif
             timer = 0.0f;
         }
     }
