@@ -52,7 +52,11 @@ public sealed class HitRegionVibration : MonoBehaviour
         GameEventBus.OnValidHit += OnValidHit;
     }
 
-    private void OnValidHit(HitEvent hit) => PlayHit(hit.InstrumentId, hit.HitForce);
+    private void OnValidHit(HitEvent hit)
+    {
+        if (GameEventBus.IsActiveContext(hit.ContextVersion))
+            PlayHit(hit.InstrumentId, hit.HitForce);
+    }
 
     /// <summary>Local visual preview. Module C should publish GameEventBus.OnValidHit instead.</summary>
     public bool PlayHit(string regionId, float force)

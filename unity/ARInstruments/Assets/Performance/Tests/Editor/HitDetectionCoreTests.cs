@@ -102,10 +102,35 @@ public sealed class HitDetectionCoreTests
         Assert.That(hits, Has.Count.EqualTo(1));
     }
 
-    private void Sample(float z, double timestampMs, float x = 0f, int malletId = 0, float confidence = 1f)
+    [Test]
+    public void CrossingRequiresTwoActiveSamplesAndPreservesTheirVersion()
+    {
+        try
+        {
+            Sample(0.4f, 0);
+            GameEventBus.BeginContext(1);
+            Sample(-0.05f, 20, version: 1);
+            GameEventBus.ActivateContext(1);
+            Sample(-0.05f, 33, version: 1);
+            Sample(0.4f, 44, version: 1);
+            Sample(-0.05f, 55);
+            Assert.That(hits, Is.Empty);
+            Sample(-0.05f, 66, version: 1);
+            Assert.That(hits, Has.Count.EqualTo(1));
+            Assert.That(hits[0].ContextVersion, Is.EqualTo(1));
+        }
+        finally
+        {
+            typeof(GameEventBus).GetMethod("ResetCameraInput",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).Invoke(null, null);
+        }
+    }
+
+    private void Sample(float z, double timestampMs, float x = 0f, int malletId = 0, float confidence = 1f, long version = 0)
     {
         core.ProcessMalletState(new MalletState
         {
+            ContextVersion = version,
             MalletId = malletId,
             Position = surface.transform.TransformPoint(new Vector3(x, 0f, z)),
             Confidence = confidence,

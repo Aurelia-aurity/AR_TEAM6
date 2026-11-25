@@ -48,6 +48,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private readonly bool[] readbackPending = new bool[ReadbackSlotCount];
     private readonly double[] dispatchTimestamps = new double[ReadbackSlotCount];
     private readonly uint[] clearData = new uint[ResultCount];
+    private readonly long[] dispatchVersions = new long[ReadbackSlotCount];
+    private long filterVersion;
     private int nextReadbackSlot;
     private int kernelIndex;
     private readonly KalmanFilter2D leftFilter = new KalmanFilter2D();
@@ -189,6 +191,9 @@ public sealed class GpuMalletTracker : MonoBehaviour
             cameraCalibrationReady = true;
         }
 
+        if (!GameEventBus.IsContextActive)
+            return;
+
         int slot = FindAvailableReadbackSlot();
         if (slot < 0)
         {
@@ -209,6 +214,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         trackerShader.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
         double timestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        dispatchVersions[slot] = GameEventBus.ContextVersion;
         dispatchTimestamps[slot] = timestampMs;
         readbackPending[slot] = true;
         switch (slot)
@@ -269,6 +275,16 @@ public sealed class GpuMalletTracker : MonoBehaviour
             return;
         }
 
+        long version = dispatchVersions[slot];
+        if (!GameEventBus.IsActiveContext(version))
+            return;
+        if (filterVersion != version)
+        {
+            leftFilter.Clear();
+            rightFilter.Clear();
+            filterVersion = version;
+        }
+
         var resultData = request.GetData<uint>();
         double timestampMs = dispatchTimestamps[slot];
         MalletState leftState = ProcessSample(
@@ -285,6 +301,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             resultData[5],
             timestampMs,
             rightFilter);
+        leftState.ContextVersion = rightState.ContextVersion = version;
         GameEventBus.OnMalletsTracked?.Invoke(leftState, rightState);
     }
 

@@ -28,6 +28,20 @@ public sealed class CameraInputContractTests
     }
 
     [Test]
+    public void ContextChangeRejectsOldSamplesAndLateActivation()
+    {
+        GameEventBus.BeginContext(1);
+        GameEventBus.ActivateContext(1);
+        GameEventBus.BeginContext(2);
+        GameEventBus.ActivateContext(1);
+        Assert.That(GameEventBus.IsActiveContext(1), Is.False);
+        Assert.That(GameEventBus.IsActiveContext(2), Is.False);
+        GameEventBus.ActivateContext(2);
+        Assert.That(GameEventBus.IsActiveContext(1), Is.False);
+        Assert.That(GameEventBus.IsActiveContext(2), Is.True);
+    }
+
+    [Test]
     public void LateSubscriberCanQueryErrorWithoutWaitingForAnotherStateChange()
     {
         var expected = State("primary", Guid.NewGuid(), CameraInputState.Error);

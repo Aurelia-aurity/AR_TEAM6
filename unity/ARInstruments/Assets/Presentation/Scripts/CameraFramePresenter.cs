@@ -15,6 +15,7 @@ public sealed class CameraFramePresenter : MonoBehaviour
     private bool hasState;
     private CameraInputStateData currentState;
     private double lastFrameAtMs;
+    private long lastFrameSequence;
 
     private void OnEnable()
     {
@@ -75,7 +76,10 @@ public sealed class CameraFramePresenter : MonoBehaviour
         currentState = state;
         hasState = true;
         if (newSession)
+        {
             lastFrameAtMs = double.NegativeInfinity;
+            lastFrameSequence = 0;
+        }
 
         switch (state.State)
         {
@@ -101,9 +105,13 @@ public sealed class CameraFramePresenter : MonoBehaviour
         if (!isActiveAndEnabled || !hasState || currentState.State != CameraInputState.Streaming
             || frame.CameraId != activeCameraId || frame.SessionId != currentState.SessionId
             || !IsValidTime(frame.ReceivedAtMs) || frame.ReceivedAtMs < currentState.ChangedAtMs
-            || frame.ReceivedAtMs <= lastFrameAtMs)
+            || frame.FrameSequence < 0
+            || (lastFrameSequence > 0 && frame.FrameSequence <= lastFrameSequence)
+            || frame.ReceivedAtMs < lastFrameAtMs
+            || (frame.FrameSequence == 0 && frame.ReceivedAtMs == lastFrameAtMs))
             return;
 
+        lastFrameSequence = frame.FrameSequence;
         lastFrameAtMs = frame.ReceivedAtMs;
         display.PresentFrame(frame.Texture, frame.ClockwiseRotation, frame.VerticallyMirrored,
             string.IsNullOrEmpty(currentState.DeviceName) ? "Camera input active." : currentState.DeviceName);

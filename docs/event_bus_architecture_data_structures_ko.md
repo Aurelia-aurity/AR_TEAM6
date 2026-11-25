@@ -14,6 +14,7 @@ using UnityEngine;
 // 1.1 말렛의 실시간 상태 (Module A: CV 추적에서 매 프레임 생성)
 public struct MalletState
 {
+    public long ContextVersion;
     public int MalletId;         // 말렛 식별자 (0 = 왼손, 1 = 오른손)
     public Vector3 Position;     // 말렛 끝부분의 좌표 (X, Y, Z 깊이)
     public Vector3 Velocity;     // 현재 운동 벡터 (방향 및 속도)
@@ -24,6 +25,7 @@ public struct MalletState
 // 1.2 물리적 타격 이벤트 (Module C: 판정 로직에서 생성하며, 오디오 및 시각 효과를 실행)
 public struct HitEvent
 {
+    public long ContextVersion;
     public string InstrumentId;  // 타격된 악기 영역의 ID (예: "Snare_1", "Cymbal_Left")
     public Vector3 HitPosition;  // 충돌이 발생한 정확한 좌표
     public float HitForce;       // 타격 강도 (0.0f ~ 1.0f, 오디오 음량에 매핑)
@@ -91,6 +93,7 @@ public static class GameEventBus
 | 데이터 | 필드 | 의미 |
 | --- | --- | --- |
 | `CameraFrameData` | `string CameraId`, `Guid SessionId` | 논리 카메라 ID와 시작 시도 식별자 |
+| | `long FrameSequence` | A가 획득 시 부여하는 카메라·세션별 순번. 1부터 증가하며 0은 기존 입력의 미지정 값 |
 | | `Texture Texture` | A 소유의 사용 가능한 영상 Texture 참조 |
 | | `int ClockwiseRotation`, `bool VerticallyMirrored` | 시계 방향 회전각(0/90/180/270), 원본 상하 반전 보정 |
 | | `double ReceivedAtMs` | A가 새 프레임을 확인한 시각 |
@@ -103,7 +106,7 @@ public static class GameEventBus
 - A는 실패한 시도를 포함해 시작 시도마다 `Guid.NewGuid()`로 새 `SessionId`를 만들고, 해당 시도의 모든 영상·상태에 같은 값을 사용합니다. `Guid.Empty`는 유효한 세션이 아닙니다. GUID는 순서 비교용 숫자가 아닙니다.
 - 두 시각은 `Time.realtimeSinceStartupAsDouble * 1000` 기준 밀리초이며, 실제 촬영 시각이나 UTC가 아닙니다. 수신 시각으로 센서 촬영 지연을 계산하지 않습니다.
 - 상하 반전은 Texture 공간에서 먼저 보정하고, 그 뒤 시계 방향으로 회전합니다. B의 사용자 거울 모드는 그와 별개이며 추적 좌표를 변경하지 않습니다.
-- Texture는 변경 가능한 실시간 참조이며 프레임 이미지의 복사본이 아닙니다. B는 표시하는 동안만 참조하며 생성·촬영·정지·해제하지 않습니다.
+- Texture는 변경 가능한 실시간 참조이며 프레임 이미지의 복사본이 아닙니다. B는 표시·분석용 복사에 참조하며 원본을 생성·촬영·정지·해제하지 않습니다. 분석 버퍼 수명은 B가 관리합니다.
 
 ### 상태와 발행 순서
 
@@ -145,6 +148,10 @@ B는 `OnEnable`에서 구독한 다음 지정 ID의 상태를 조회합니다. �
 
 - **Module A (CV — 사용자가 현재 담당):** 위 계약의 영상·입력 상태를 발행하고, 추적 분석 결과는 `GameEventBus.OnMalletsTracked?.Invoke(leftMallet, rightMallet);`로 전달합니다. CV 코드에는 어떠한 충돌 감지 코드도 **작성하지 마세요.**
 
-- **Module B (AR/UI):** 이벤트 버스를 구독하는 역할만 담당합니다. `OnMalletsTracked`를 수신하여 화면의 커서 위치를 갱신하고, `OnValidHit`를 수신하여 시각 효과를 재생합니다.
+- **Module B (AR/UI):** 영상·추적·타격 이벤트를 구독하며 마커 검출·배치용 보정·저빈도 감시·재정렬과 악기 선택을 담당합니다. 최종 악기 루트를 계산해 모델 배치에 사용하고 그 값을 `PlayContextSnapshot`으로 발행합니다. B는 연주 상태도 알립니다. `OnMalletsTracked`를 수신하여 화면의 커서 위치를 갱신하고, `OnValidHit`를 수신하여 시각 효과를 재생합니다.
 
-- **Module C (Logic/Audio):** `OnMalletsTracked`를 구독합니다. 가상 악기의 `Collider` 목록을 관리하며, 이전 프레임과 현재 프레임의 위치를 잇는 선분이 `Collider`를 통과하는지 계산합니다(레이캐스트). 통과했다면 타격 강도를 계산하고 `GameEventBus.OnValidHit?.Invoke(hitData);`를 호출합니다.
+- **Module C (Logic/Audio):** `OnMalletsTracked`를 구독합니다. 가상 악기의 `Collider`를 B에서 받은 최종 악기 루트에 상대적으로 배치합니다. 이전 프레임과 현재 프레임의 위치를 잇는 선분이 `Collider`를 통과하는지 계산합니다(레이캐스트). 통과했다면 타격 강도를 계산하고 `GameEventBus.OnValidHit?.Invoke(hitData);`를 호출합니다.
+
+## 5. 마커 배치·재정렬 추가 계약 (2026.11.17)
+
+[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 따른다. 카메라 계약의 프레임 식별·분석 버퍼 규칙을 보강하고 보정·배치·악기 전환·버전 포함 전달을 추가한다. A가 분석 시작 시 확보한 `MalletState.ContextVersion`을 C가 유효 타격의 `HitEvent.ContextVersion`으로 전달한다. 판정·오디오·시각 효과는 활성 버전만 수락한다. B는 카메라별 내부 파라미터와 왜곡 모델 및 기준 카메라 배치를 담당하고, A는 복수 카메라의 월드 정합을 검증·확정한 뒤 적용 성공을 응답한다. B의 모델과 C의 타격 영역은 `PlayContextSnapshot.InstrumentRootTransform`을 공유한다. B의 모델 배치가 준비되고 A/C가 동일 컨텍스트 버전의 적용 완료를 응답하면 B가 활성화한다. 루트 계산과 적용·검증 규칙은 공통 계약을 따른다.
