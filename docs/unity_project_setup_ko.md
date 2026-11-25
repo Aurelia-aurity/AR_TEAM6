@@ -80,3 +80,9 @@ Unity Hub의 **Add → Add project from disk**에서 `unity/ARInstruments`를 �
 Unity의 Version Control Mode는 **Visible Meta Files**, Asset Serialization은 **Force Text**를 사용합니다. `Assets`의 `.meta`, `Packages`와 `ProjectSettings`를 함께 공유하고 `Library`, `Temp`, `Logs`, `UserSettings`는 제외합니다. 비어 있는 리소스 폴더에는 `.gitkeep`을 두어 Git에서도 구조를 유지합니다.
 
 저장소 루트 이름은 현재 `TEAM6` 그대로 사용합니다. 별도의 `AR_TEAM6` 폴더를 중첩 생성하지 않습니다.
+
+## 마커 배치 담당 및 후속 통합 계약 (2026.11.17)
+
+[마커 배치 공통 계약](marker_placement_contracts_ko.md)을 적용한다. A는 촬영·채 추적, B는 마커 검출·배치용 보정·저빈도 감시·재정렬·단일 악기 선택과 표시, C는 판정 영역·음원·적용 완료를 담당한다. B는 구독뿐 아니라 컨텍스트와 운영 상태를 발행한다. 공통 보정 버전을 사용하며 모듈 간 직접 호출은 하지 않는다.
+
+고정 마커에서 초기 배치를 확정한 뒤 관측 오차를 매번 모델에 적용하지 않는다. 지속적인 상대 위치 변화 시 판정을 중단하고 카메라 변환을 갱신한 뒤 A/C 준비 완료 후 재개한다. 사용자 배치 기준은 유지한다. 이는 목표 계약이며 현재 미리보기 씬에 마커 기능이 구현되었다는 뜻은 아니다.

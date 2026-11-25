@@ -53,6 +53,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private readonly bool[] readbackPending = new bool[ReadbackSlotCount];
     private readonly double[] dispatchTimestamps = new double[ReadbackSlotCount];
     private readonly uint[] clearData = new uint[ResultCount];
+    private readonly long[] dispatchVersions = new long[ReadbackSlotCount];
+    private long filterVersion;
     private int nextReadbackSlot;
     private int kernelIndex;
     private readonly KalmanFilter2D leftFilter = new KalmanFilter2D();
@@ -79,6 +81,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
     private void OnEnable()
     {
+        GameEventBus.OnCalibrationCompleted += ApplyCalibration;
         shuttingDown = false;
         cameraCalibrationReady = false;
         cameraStreamingPublished = false;
@@ -217,8 +220,16 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private void Update()
     {
         double nowMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        bool hasValidFrame = webCam != null
+            && webCam.isPlaying
+            && webCam.didUpdateThisFrame
+            && webCam.width > 16;
 
-        if (!cameraStreamingPublished)
+        if (hasValidFrame)
+        {
+            lastFrameReceivedMs = nowMs;
+        }
+        else if (!cameraStreamingPublished)
         {
             if ((nowMs - sessionStartMs) > startTimeoutSeconds * 1000.0)
             {
@@ -226,24 +237,20 @@ public sealed class GpuMalletTracker : MonoBehaviour
                     "Camera start timed out.", nowMs);
                 terminalStatePublished = true;
                 enabled = false;
-                return;
             }
-        }
-        else if (webCam == null || !webCam.isPlaying || (nowMs - lastFrameReceivedMs) > frameTimeoutSeconds * 1000.0)
-        {
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.FrameTimeout,
-                "Camera frame stream interrupted.", nowMs);
-            terminalStatePublished = true;
-            enabled = false;
             return;
         }
-
-        if (webCam == null || !webCam.isPlaying || !webCam.didUpdateThisFrame || webCam.width <= 16)
+        else
         {
+            if (webCam == null || !webCam.isPlaying || (nowMs - lastFrameReceivedMs) > frameTimeoutSeconds * 1000.0)
+            {
+                PublishCameraInputState(CameraInputState.Error, CameraInputError.FrameTimeout,
+                    "Camera frame stream interrupted.", nowMs);
+                terminalStatePublished = true;
+                enabled = false;
+            }
             return;
         }
-
-        lastFrameReceivedMs = nowMs;
 
         if (!cameraCalibrationReady)
         {
@@ -275,6 +282,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
             VerticallyMirrored = webCam.videoVerticallyMirrored,
             ReceivedAtMs = nowMs
         });
+        if (!GameEventBus.IsContextActive)
+            return;
 
         int slot = FindAvailableReadbackSlot();
         if (slot < 0)
@@ -296,6 +305,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         trackerShader.Dispatch(kernelIndex, threadGroupsX, threadGroupsY, 1);
 
         double timestampMs = Time.realtimeSinceStartupAsDouble * 1000.0;
+        dispatchVersions[slot] = GameEventBus.ContextVersion;
         dispatchTimestamps[slot] = timestampMs;
         readbackPending[slot] = true;
         switch (slot)
@@ -356,6 +366,16 @@ public sealed class GpuMalletTracker : MonoBehaviour
             return;
         }
 
+        long version = dispatchVersions[slot];
+        if (!GameEventBus.IsActiveContext(version))
+            return;
+        if (filterVersion != version)
+        {
+            leftFilter.Clear();
+            rightFilter.Clear();
+            filterVersion = version;
+        }
+
         var resultData = request.GetData<uint>();
         double timestampMs = dispatchTimestamps[slot];
         MalletState leftState = ProcessSample(
@@ -372,6 +392,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             resultData[5],
             timestampMs,
             rightFilter);
+        leftState.ContextVersion = rightState.ContextVersion = version;
         GameEventBus.OnMalletsTracked?.Invoke(leftState, rightState);
     }
 
@@ -482,6 +503,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
     private void OnDisable()
     {
+        GameEventBus.OnCalibrationCompleted -= ApplyCalibration;
         ReleaseResources();
     }
 

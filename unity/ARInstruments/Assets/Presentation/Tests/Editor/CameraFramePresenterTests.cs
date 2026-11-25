@@ -92,6 +92,27 @@ public sealed class CameraFramePresenterTests
     }
 
     [Test]
+    public void OlderSequenceCannotReplaceANewerFrameEvenWithLaterReceiptTime()
+    {
+        StartStreaming();
+        var frame = Frame();
+        frame.FrameSequence = 2;
+        GameEventBus.PublishCameraFrame(frame);
+        frame.FrameSequence = 1;
+        frame.ClockwiseRotation = 0;
+        frame.ReceivedAtMs = ++time;
+        GameEventBus.PublishCameraFrame(frame);
+        Assert.That(view.VideoAspectRatio, Is.EqualTo(90f / 160f).Within(0.0001f));
+        session = Guid.NewGuid();
+        GameEventBus.PublishCameraInputState(State(CameraInputState.Waiting));
+        GameEventBus.PublishCameraInputState(State(CameraInputState.Streaming));
+        frame.SessionId = session;
+        frame.ReceivedAtMs = ++time;
+        GameEventBus.PublishCameraFrame(frame);
+        Assert.That(view.VideoAspectRatio, Is.EqualTo(160f / 90f).Within(0.0001f));
+    }
+
+    [Test]
     public void FrameUsesViewOrientationAspectAndMirrorWithoutAnyMalletEvents()
     {
         view.SetMirrorMode(true);

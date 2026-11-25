@@ -27,6 +27,7 @@ public sealed class HitDetectionCore : IDisposable
     private readonly MalletHitState leftMallet = new MalletHitState();
     private readonly MalletHitState rightMallet = new MalletHitState();
     private bool isSubscribed;
+    private long historyVersion;
 
     /// <summary>
     /// Adds a strike surface to check for hits.
@@ -109,6 +110,17 @@ public sealed class HitDetectionCore : IDisposable
     /// </summary>
     public void ProcessMalletState(MalletState state)
     {
+        if (!GameEventBus.IsActiveContext(state.ContextVersion))
+            return;
+        if (historyVersion != state.ContextVersion)
+        {
+            leftMallet.Unlock();
+            rightMallet.Unlock();
+            leftMallet.ResetTracking();
+            rightMallet.ResetTracking();
+            historyVersion = state.ContextVersion;
+        }
+
         MalletHitState mallet = state.MalletId == 0 ? leftMallet : rightMallet;
         if (!mallet.TryAcceptTimestamp(state.TimestampMs))
         {
@@ -158,6 +170,7 @@ public sealed class HitDetectionCore : IDisposable
             mallet.LockUntilLift(pad);
             GameEventBus.OnValidHit?.Invoke(new HitEvent
             {
+                ContextVersion = state.ContextVersion,
                 InstrumentId = pad.PadId,
                 HitPosition = contact,
                 HitForce = normalizedHitStrength,

@@ -115,6 +115,8 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void Accept(MalletState state)
     {
+        if (!GameEventBus.IsActiveContext(state.ContextVersion))
+            return;
         if (state.MalletId == 0)
             Accept(ref left, state);
         else if (state.MalletId == 1)
@@ -164,7 +166,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     {
         double maxAgeMs = Mathf.Max(0.05f, maxSampleAgeSeconds) * 1000.0;
         double captureAgeMs = nowMs - sample.State.TimestampMs;
-        if (!sample.Tracked || nowMs - sample.ReceivedAtMs > maxAgeMs
+        if (!sample.Tracked || !GameEventBus.IsActiveContext(sample.State.ContextVersion) || nowMs - sample.ReceivedAtMs > maxAgeMs
             || captureAgeMs > maxAgeMs || captureAgeMs < -50.0)
         {
             sample.Tracked = false;
