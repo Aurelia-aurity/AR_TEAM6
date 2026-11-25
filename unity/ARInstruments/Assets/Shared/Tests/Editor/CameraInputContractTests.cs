@@ -81,6 +81,19 @@ public sealed class CameraInputContractTests
     }
 
     [Test]
+    public void EmptyCameraIdIsIgnoredForPublishingAndLookup()
+    {
+        int notifications = 0;
+        GameEventBus.OnCameraInputStateChanged += _ => notifications++;
+
+        GameEventBus.PublishCameraInputState(State(string.Empty, Guid.NewGuid(), CameraInputState.Waiting));
+
+        Assert.That(notifications, Is.Zero);
+        Assert.That(GameEventBus.TryGetCameraInputState(string.Empty, out _), Is.False);
+        Assert.That(GameEventBus.TryGetCameraInputState(null, out _), Is.False);
+    }
+
+    [Test]
     public void FramesAreSynchronousBorrowedReferencesAndAreNotReplayed()
     {
         var texture = new Texture2D(2, 2);
@@ -120,11 +133,23 @@ public sealed class CameraInputContractTests
         int notifications = 0;
         GameEventBus.OnCameraInputStateChanged += _ => notifications++;
         GameEventBus.OnCameraFrameReceived += _ => notifications++;
+        GameEventBus.OnMalletsTracked += (_, __) => notifications++;
+        GameEventBus.OnTrackingLost += _ => notifications++;
+        GameEventBus.OnTrackingLostAt += (_, __) => notifications++;
+        GameEventBus.OnRawMalletSample += _ => notifications++;
+        GameEventBus.OnCalibrationCompleted += (_, __, ___, ____) => notifications++;
+        GameEventBus.OnValidHit += _ => notifications++;
         GameEventBus.PublishCameraInputState(State("primary", Guid.NewGuid(), CameraInputState.Error));
         Reset();
         Assert.That(GameEventBus.TryGetCameraInputState("primary", out _), Is.False);
         GameEventBus.PublishCameraInputState(State("primary", Guid.NewGuid(), CameraInputState.Waiting));
         GameEventBus.PublishCameraFrame(default);
+        GameEventBus.OnMalletsTracked?.Invoke(default, default);
+        GameEventBus.OnTrackingLost?.Invoke(0);
+        GameEventBus.OnTrackingLostAt?.Invoke(0, 0);
+        GameEventBus.OnRawMalletSample?.Invoke(default);
+        GameEventBus.OnCalibrationCompleted?.Invoke(default, default, 0, 0);
+        GameEventBus.OnValidHit?.Invoke(default);
         Assert.That(notifications, Is.EqualTo(1));
     }
 }
