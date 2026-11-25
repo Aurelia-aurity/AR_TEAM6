@@ -19,6 +19,7 @@ public sealed class CalibrationManager : MonoBehaviour
 {
     private const int SampleCount = 60;
 
+    public GpuMalletTracker tracker;
     public CalibrationStep CurrentStep { get; private set; }
 
     private int currentSampleIndex;
@@ -138,11 +139,10 @@ public sealed class CalibrationManager : MonoBehaviour
         if (CurrentStep == CalibrationStep.RestOnDesk)
         {
             maxArea = System.Math.Max(maxArea, minArea + 1.0);
-            GameEventBus.OnCalibrationCompleted?.Invoke(
-                minPixel,
-                maxPixel,
-                minArea,
-                maxArea);
+            if (tracker != null)
+            {
+                tracker.ApplyCalibration(minPixel, maxPixel, minArea, maxArea);
+            }
         }
     }
 }

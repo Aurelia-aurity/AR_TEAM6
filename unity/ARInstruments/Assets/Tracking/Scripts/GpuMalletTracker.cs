@@ -1,5 +1,5 @@
-using System;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Rendering;
 
 /// <summary>
@@ -9,10 +9,9 @@ using UnityEngine.Rendering;
 public sealed class GpuMalletTracker : MonoBehaviour
 {
     public ComputeShader trackerShader;
+    public RawImage cameraDebugger;
 
     [Header("Camera input")]
-    [Tooltip("Logical camera ID used by the presentation event consumer.")]
-    public string cameraId = "primary";
     [Tooltip("Exact device name from Log Available Camera Devices. Empty keeps automatic selection. Applied on startup.")]
     public string cameraDeviceName = "";
 
@@ -40,10 +39,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
     public Vector3 worldMin = new Vector3(-5.0f, -3.0f, 0.0f);
     public Vector3 worldMax = new Vector3(5.0f, 3.0f, 2.0f);
 
-    [Header("Watchdog")]
-    [SerializeField] private float startTimeoutSeconds = 5.0f;
-    [SerializeField] private float frameTimeoutSeconds = 2.0f;
-
     private const int ResultCount = 6;
     private const int ThreadsPerGroup = 8;
     private const int ReadbackSlotCount = 3;
@@ -60,46 +55,15 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private readonly KalmanFilter2D leftFilter = new KalmanFilter2D();
     private readonly KalmanFilter2D rightFilter = new KalmanFilter2D();
     private readonly CoordinateMapper coordinateMapper = new CoordinateMapper();
-    private Action<AsyncGPUReadbackRequest> onReadbackSlot0;
-    private Action<AsyncGPUReadbackRequest> onReadbackSlot1;
-    private Action<AsyncGPUReadbackRequest> onReadbackSlot2;
     private bool cameraCalibrationReady;
     private bool frontFacingCamera;
-    private bool cameraStreamingPublished;
-    private bool terminalStatePublished;
     private bool shuttingDown;
-    private Guid sessionId;
-    private double sessionStartMs;
-    private double lastFrameReceivedMs;
 
-    private void Awake()
+    private void Start()
     {
-        onReadbackSlot0 = OnReadbackSlot0;
-        onReadbackSlot1 = OnReadbackSlot1;
-        onReadbackSlot2 = OnReadbackSlot2;
-    }
-
-    private void OnEnable()
-    {
-        GameEventBus.OnCalibrationCompleted += ApplyCalibration;
-        shuttingDown = false;
-        cameraCalibrationReady = false;
-        cameraStreamingPublished = false;
-        terminalStatePublished = false;
-
-        if (string.IsNullOrEmpty(cameraId))
-        {
-            cameraId = "primary";
-        }
-        sessionId = Guid.NewGuid();
-        PublishCameraInputState(CameraInputState.Waiting, CameraInputError.None);
-
         if (trackerShader == null)
         {
             Debug.LogError("GpuMalletTracker requires a compute shader.", this);
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
-                "GpuMalletTracker requires a compute shader.");
-            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -107,9 +71,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
         if (!SystemInfo.supportsComputeShaders)
         {
             Debug.LogError("This platform does not support compute shaders.", this);
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
-                "This platform does not support compute shaders.");
-            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -117,9 +78,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
         if (!SystemInfo.supportsAsyncGPUReadback)
         {
             Debug.LogError("This platform does not support async GPU readback.", this);
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
-                "This platform does not support async GPU readback.");
-            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -128,9 +86,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
         if (devices == null || devices.Length == 0)
         {
             Debug.LogError("No camera device is available for GpuMalletTracker.", this);
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.DeviceNotFound,
-                "No camera device is available.");
-            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -138,9 +93,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
         LogCameraDevices(devices);
         if (!TrySelectCamera(devices, out WebCamDevice selectedDevice))
         {
-            PublishCameraInputState(CameraInputState.Error, CameraInputError.DeviceNotFound,
-                "The selected camera was not found.");
-            terminalStatePublished = true;
             enabled = false;
             return;
         }
@@ -149,16 +101,15 @@ public sealed class GpuMalletTracker : MonoBehaviour
         frontFacingCamera = selectedDevice.isFrontFacing;
         webCam = new WebCamTexture(selectedDevice.name, 1280, 720, 60);
         webCam.Play();
-        sessionStartMs = Time.realtimeSinceStartupAsDouble * 1000.0;
-        lastFrameReceivedMs = sessionStartMs;
+        if (cameraDebugger != null)
+        {
+            cameraDebugger.texture = webCam;
+        }
 
         for (int i = 0; i < ReadbackSlotCount; i++)
         {
             resultBuffers[i] = new ComputeBuffer(ResultCount, sizeof(uint));
-            readbackPending[i] = false;
-            dispatchTimestamps[i] = 0.0;
         }
-        nextReadbackSlot = 0;
 
         kernelIndex = trackerShader.FindKernel("CSMain");
         leftFilter.SetNoiseParameters(processNoise, measurementNoise);
@@ -219,36 +170,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
     private void Update()
     {
-        double nowMs = Time.realtimeSinceStartupAsDouble * 1000.0;
-        bool hasValidFrame = webCam != null
-            && webCam.isPlaying
-            && webCam.didUpdateThisFrame
-            && webCam.width > 16;
-
-        if (hasValidFrame)
+        if (webCam == null || !webCam.isPlaying || !webCam.didUpdateThisFrame)
         {
-            lastFrameReceivedMs = nowMs;
-        }
-        else if (!cameraStreamingPublished)
-        {
-            if ((nowMs - sessionStartMs) > startTimeoutSeconds * 1000.0)
-            {
-                PublishCameraInputState(CameraInputState.Error, CameraInputError.StartFailed,
-                    "Camera start timed out.", nowMs);
-                terminalStatePublished = true;
-                enabled = false;
-            }
-            return;
-        }
-        else
-        {
-            if (webCam == null || !webCam.isPlaying || (nowMs - lastFrameReceivedMs) > frameTimeoutSeconds * 1000.0)
-            {
-                PublishCameraInputState(CameraInputState.Error, CameraInputError.FrameTimeout,
-                    "Camera frame stream interrupted.", nowMs);
-                terminalStatePublished = true;
-                enabled = false;
-            }
             return;
         }
 
@@ -268,20 +191,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
             cameraCalibrationReady = true;
         }
 
-        if (!cameraStreamingPublished)
-        {
-            PublishCameraInputState(CameraInputState.Streaming, CameraInputError.None, null, nowMs);
-            cameraStreamingPublished = true;
-        }
-        GameEventBus.PublishCameraFrame(new CameraFrameData
-        {
-            CameraId = cameraId,
-            SessionId = sessionId,
-            Texture = webCam,
-            ClockwiseRotation = webCam.videoRotationAngle,
-            VerticallyMirrored = webCam.videoVerticallyMirrored,
-            ReceivedAtMs = nowMs
-        });
         if (!GameEventBus.IsContextActive)
             return;
 
@@ -311,13 +220,13 @@ public sealed class GpuMalletTracker : MonoBehaviour
         switch (slot)
         {
             case 0:
-                AsyncGPUReadback.Request(resultBuffer, onReadbackSlot0);
+                AsyncGPUReadback.Request(resultBuffer, OnReadbackSlot0);
                 break;
             case 1:
-                AsyncGPUReadback.Request(resultBuffer, onReadbackSlot1);
+                AsyncGPUReadback.Request(resultBuffer, OnReadbackSlot1);
                 break;
             default:
-                AsyncGPUReadback.Request(resultBuffer, onReadbackSlot2);
+                AsyncGPUReadback.Request(resultBuffer, OnReadbackSlot2);
                 break;
         }
     }
@@ -501,31 +410,9 @@ public sealed class GpuMalletTracker : MonoBehaviour
         }
     }
 
-    private void OnDisable()
-    {
-        GameEventBus.OnCalibrationCompleted -= ApplyCalibration;
-        ReleaseResources();
-    }
-
     private void OnDestroy()
     {
-        ReleaseResources();
-    }
-
-    private void ReleaseResources()
-    {
-        if (shuttingDown)
-        {
-            return;
-        }
-
         shuttingDown = true;
-        if (sessionId != Guid.Empty && webCam != null && !terminalStatePublished)
-        {
-            PublishCameraInputState(CameraInputState.Stopped, CameraInputError.None);
-        }
-
-        AsyncGPUReadback.WaitAllRequests();
         if (webCam != null)
         {
             webCam.Stop();
@@ -540,35 +427,6 @@ public sealed class GpuMalletTracker : MonoBehaviour
                 resultBuffers[i] = null;
             }
         }
-
-        cameraCalibrationReady = false;
-        cameraStreamingPublished = false;
-    }
-
-    private void PublishCameraInputState(
-        CameraInputState state,
-        CameraInputError error,
-        string description = null)
-    {
-        PublishCameraInputState(state, error, description, Time.realtimeSinceStartupAsDouble * 1000.0);
-    }
-
-    private void PublishCameraInputState(
-        CameraInputState state,
-        CameraInputError error,
-        string description,
-        double changedAtMs)
-    {
-        GameEventBus.PublishCameraInputState(new CameraInputStateData
-        {
-            CameraId = cameraId,
-            SessionId = sessionId,
-            DeviceName = webCam == null ? cameraDeviceName : webCam.deviceName,
-            State = state,
-            ChangedAtMs = changedAtMs,
-            Error = error,
-            Description = description
-        });
     }
 
     public void ApplyCalibration(
