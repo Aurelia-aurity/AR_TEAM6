@@ -69,6 +69,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private bool terminalStatePublished;
     private bool shuttingDown;
     private Guid sessionId;
+    private long frameSequence;
     private double sessionStartMs;
     private double lastFrameReceivedMs;
 
@@ -92,6 +93,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
             cameraId = "primary";
         }
         sessionId = Guid.NewGuid();
+        frameSequence = 0;
         PublishCameraInputState(CameraInputState.Waiting, CameraInputError.None);
 
         if (trackerShader == null)
@@ -277,6 +279,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         {
             CameraId = cameraId,
             SessionId = sessionId,
+            FrameSequence = ++frameSequence,
             Texture = webCam,
             ClockwiseRotation = webCam.videoRotationAngle,
             VerticallyMirrored = webCam.videoVerticallyMirrored,

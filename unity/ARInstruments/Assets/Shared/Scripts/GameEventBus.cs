@@ -28,11 +28,13 @@ public static class GameEventBus
 
     public static bool IsSessionRunning { get; private set; }
     public static InstrumentType SelectedInstrument { get; private set; } = InstrumentType.Janggu;
+    public static string SelectedCameraDeviceName { get; private set; } = string.Empty;
 
     public static event Action<RunSessionRequest> OnRunSessionRequested;
     public static event Action<RunSessionResult> OnRunSessionCompleted;
     public static event Action<bool> OnSessionRunningChanged;
     public static event Action<InstrumentType> OnInstrumentSelected;
+    public static event Action<string> OnCameraDeviceSelected;
 
     public static void PublishRunSessionRequest(RunSessionRequest request)
     {
@@ -59,6 +61,12 @@ public static class GameEventBus
 
         SelectedInstrument = instrument;
         OnInstrumentSelected?.Invoke(instrument);
+    }
+
+    public static void PublishCameraDeviceSelected(string deviceName)
+    {
+        SelectedCameraDeviceName = deviceName ?? string.Empty;
+        OnCameraDeviceSelected?.Invoke(SelectedCameraDeviceName);
     }
 
     // Camera publishers must use the publish methods so cached state stays in sync.
@@ -105,11 +113,13 @@ public static class GameEventBus
         IsContextActive = true;
         IsSessionRunning = false;
         SelectedInstrument = InstrumentType.Janggu;
+        SelectedCameraDeviceName = string.Empty;
         cameraStates.Clear();
         OnRunSessionRequested = null;
         OnRunSessionCompleted = null;
         OnSessionRunningChanged = null;
         OnInstrumentSelected = null;
+        OnCameraDeviceSelected = null;
         OnCameraFrameReceived = null;
         OnCameraInputStateChanged = null;
         OnMalletsTracked = null;

@@ -85,4 +85,34 @@ public sealed class PlaySessionContractTests
             GameEventBus.PublishInstrumentSelected(InstrumentType.Janggu);
         }
     }
+
+    [Test]
+    public void PublishCameraDeviceSelected_NormalizesNullCachesNameAndNotifies()
+    {
+        string observed = null;
+        int callCount = 0;
+        void OnDevice(string name)
+        {
+            callCount++;
+            observed = name;
+        }
+
+        GameEventBus.OnCameraDeviceSelected += OnDevice;
+        try
+        {
+            GameEventBus.PublishCameraDeviceSelected("Iriun Webcam");
+            Assert.That(GameEventBus.SelectedCameraDeviceName, Is.EqualTo("Iriun Webcam"));
+            Assert.That(observed, Is.EqualTo("Iriun Webcam"));
+
+            GameEventBus.PublishCameraDeviceSelected(null);
+            Assert.That(GameEventBus.SelectedCameraDeviceName, Is.EqualTo(string.Empty));
+            Assert.That(observed, Is.EqualTo(string.Empty));
+            Assert.That(callCount, Is.EqualTo(2));
+        }
+        finally
+        {
+            GameEventBus.OnCameraDeviceSelected -= OnDevice;
+            GameEventBus.PublishCameraDeviceSelected(string.Empty);
+        }
+    }
 }

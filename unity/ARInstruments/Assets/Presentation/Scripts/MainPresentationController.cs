@@ -11,6 +11,8 @@ public sealed class MainPresentationController : MonoBehaviour
     [SerializeField] private GameObject jangguObject;
     [SerializeField] private GameObject bukObject;
     [SerializeField] private CalibrationManager calibrationManager;
+    [SerializeField] private TrackingStatusHud statusHud;
+    [SerializeField] private MainAdminPanel adminPanel;
 
     private bool isSyncingInstrument;
 
@@ -37,6 +39,12 @@ public sealed class MainPresentationController : MonoBehaviour
             : (ScreenInstrument)GameEventBus.SelectedInstrument;
         ApplyInstrumentVisual(initialInstrument);
         GameEventBus.PublishInstrumentSelected((InstrumentType)initialInstrument);
+
+        if (adminPanel != null)
+        {
+            adminPanel.SetVisible(controlBar != null && controlBar.State.Mode == ScreenMode.Administrator);
+            adminPanel.SetActiveInstrument(initialInstrument);
+        }
 
         if (controlBar != null && !controlBar.State.IsPending
             && controlBar.State.IsRunning != GameEventBus.IsSessionRunning)
@@ -122,6 +130,11 @@ public sealed class MainPresentationController : MonoBehaviour
 
     private void OnUiModeChanged(ScreenMode mode)
     {
+        if (adminPanel != null)
+        {
+            adminPanel.SetVisible(mode == ScreenMode.Administrator);
+        }
+
         if (mode == ScreenMode.Administrator && calibrationManager != null
             && calibrationManager.CurrentStep == CalibrationStep.NotStarted)
         {
@@ -140,6 +153,11 @@ public sealed class MainPresentationController : MonoBehaviour
         if (bukObject != null)
         {
             bukObject.SetActive(instrument == ScreenInstrument.Buk);
+        }
+
+        if (adminPanel != null)
+        {
+            adminPanel.SetActiveInstrument(instrument);
         }
     }
 }

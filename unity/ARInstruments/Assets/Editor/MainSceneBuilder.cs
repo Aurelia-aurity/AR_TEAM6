@@ -202,6 +202,18 @@ public static class MainSceneBuilder
         }
 
         var calibration = displayRoot.AddComponent<CalibrationManager>();
+        var statusHud = displayRoot.AddComponent<TrackingStatusHud>();
+        var hudSo = new SerializedObject(statusHud);
+        hudSo.FindProperty("calibrationManager").objectReferenceValue = calibration;
+        hudSo.ApplyModifiedPropertiesWithoutUndo();
+
+        var adminPanel = displayRoot.AddComponent<MainAdminPanel>();
+        var adminSo = new SerializedObject(adminPanel);
+        adminSo.FindProperty("jangguTransform").objectReferenceValue = janggu.transform;
+        adminSo.FindProperty("bukTransform").objectReferenceValue = buk.transform;
+        adminSo.FindProperty("calibrationManager").objectReferenceValue = calibration;
+        adminSo.ApplyModifiedPropertiesWithoutUndo();
+
         var controlBar = displayRoot.GetComponent<ScreenControlBar>();
         var presentationController = displayRoot.AddComponent<MainPresentationController>();
         var controllerSo = new SerializedObject(presentationController);
@@ -209,6 +221,8 @@ public static class MainSceneBuilder
         controllerSo.FindProperty("jangguObject").objectReferenceValue = janggu;
         controllerSo.FindProperty("bukObject").objectReferenceValue = buk;
         controllerSo.FindProperty("calibrationManager").objectReferenceValue = calibration;
+        controllerSo.FindProperty("statusHud").objectReferenceValue = statusHud;
+        controllerSo.FindProperty("adminPanel").objectReferenceValue = adminPanel;
         controllerSo.ApplyModifiedPropertiesWithoutUndo();
     }
 

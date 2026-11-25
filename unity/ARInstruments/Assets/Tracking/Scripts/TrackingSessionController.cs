@@ -33,14 +33,21 @@ public sealed class TrackingSessionController : MonoBehaviour
 
     private void OnEnable()
     {
+        if (tracker != null && !string.IsNullOrEmpty(GameEventBus.SelectedCameraDeviceName))
+        {
+            tracker.cameraDeviceName = GameEventBus.SelectedCameraDeviceName;
+        }
+
         GameEventBus.OnRunSessionRequested += OnRunSessionRequested;
         GameEventBus.OnCameraInputStateChanged += OnCameraInputStateChanged;
+        GameEventBus.OnCameraDeviceSelected += OnCameraDeviceSelected;
     }
 
     private void OnDisable()
     {
         GameEventBus.OnRunSessionRequested -= OnRunSessionRequested;
         GameEventBus.OnCameraInputStateChanged -= OnCameraInputStateChanged;
+        GameEventBus.OnCameraDeviceSelected -= OnCameraDeviceSelected;
         hasPendingRequest = false;
         waitingStreamRequestId = 0;
 
@@ -59,6 +66,37 @@ public sealed class TrackingSessionController : MonoBehaviour
     {
         hasPendingRequest = true;
         pendingRequest = request;
+    }
+
+    private void OnCameraDeviceSelected(string deviceName)
+    {
+        if (tracker == null)
+        {
+            return;
+        }
+
+        string nextDevice = deviceName ?? string.Empty;
+        if (string.Equals(tracker.cameraDeviceName, nextDevice, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        tracker.cameraDeviceName = nextDevice;
+        if (tracker.enabled)
+        {
+            var probe = CameraAvailabilityProbe ?? DefaultCameraProbe;
+            (bool available, string probeError) = probe(nextDevice);
+            if (!available)
+            {
+                tracker.enabled = false;
+                PublishCameraUnavailable(probeError);
+                GameEventBus.PublishSessionRunningChanged(false);
+                return;
+            }
+
+            tracker.enabled = false;
+            tracker.enabled = true;
+        }
     }
 
     private void Update()

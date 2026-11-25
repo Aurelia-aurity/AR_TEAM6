@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public enum CalibrationStep : byte
@@ -17,9 +18,13 @@ public enum CalibrationStep : byte
 /// </summary>
 public sealed class CalibrationManager : MonoBehaviour
 {
-    private const int SampleCount = 60;
+    public const int SamplesPerStep = 60;
 
     public CalibrationStep CurrentStep { get; private set; }
+    public int CurrentSampleCount => currentSampleIndex;
+    public bool IsCalibrating => CurrentStep > CalibrationStep.NotStarted && CurrentStep < CalibrationStep.Completed;
+
+    public event Action<CalibrationStep, int, int> ProgressChanged;
 
     private int currentSampleIndex;
     private double sumX;
@@ -54,6 +59,16 @@ public sealed class CalibrationManager : MonoBehaviour
         StartNextStep();
     }
 
+    public void Cancel()
+    {
+        CurrentStep = CalibrationStep.NotStarted;
+        currentSampleIndex = 0;
+        sumX = 0.0;
+        sumY = 0.0;
+        sumArea = 0.0;
+        ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
+    }
+
     public void StartNextStep()
     {
         if (CurrentStep >= CalibrationStep.Completed)
@@ -66,6 +81,7 @@ public sealed class CalibrationManager : MonoBehaviour
         sumX = 0.0;
         sumY = 0.0;
         sumArea = 0.0;
+        ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
     }
 
     private void ProcessCalibrationSample(RawMalletSample sample)
@@ -81,19 +97,23 @@ public sealed class CalibrationManager : MonoBehaviour
         sumY += sample.PixelPosition.y;
         sumArea += sample.PixelArea;
         currentSampleIndex++;
-        if (currentSampleIndex >= SampleCount)
+        if (currentSampleIndex >= SamplesPerStep)
         {
             RecordCurrentStep();
             StartNextStep();
+        }
+        else
+        {
+            ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
         }
     }
 
     private void RecordCurrentStep()
     {
         Vector2 averagePixel = new Vector2(
-            (float)(sumX / SampleCount),
-            (float)(sumY / SampleCount));
-        double averageArea = sumArea / SampleCount;
+            (float)(sumX / SamplesPerStep),
+            (float)(sumY / SamplesPerStep));
+        double averageArea = sumArea / SamplesPerStep;
 
         switch (CurrentStep)
         {
