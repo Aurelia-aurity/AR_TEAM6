@@ -6,7 +6,7 @@
 
 1. Unity Hub에서 **Add → Add project from disk**를 선택합니다.
 2. 이 저장소의 `unity/ARInstruments` 폴더를 추가합니다.
-3. Unity **6000.0.25f1**으로 프로젝트를 엽니다.
+3. Unity **6000.6.8f1**으로 프로젝트를 엽니다.
 4. `Assets/Shared/Scenes/Main.unity`를 엽니다.
 
 설치된 에디터의 공식 **3D URP** 템플릿으로 초기화했습니다. Unity Hub에서 Unity Personal 등의 유효한 라이선스를 활성화해야 에디터를 실행할 수 있습니다. 2026.11.09 사용자 확인 기준, 라이선스 활성화 후 프로젝트를 열고 기본 씬을 Play 모드에서 오류 없이 실행했습니다.

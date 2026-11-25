@@ -29,6 +29,7 @@ public sealed class CameraDisplayView : MonoBehaviour
 
     private int rotation;
     private bool mirrorEnabled;
+    private string lastStatusDetail;
 
     public CameraDisplayStatus Status { get; private set; }
     public bool MirrorEnabled => mirrorEnabled;
@@ -94,8 +95,6 @@ public sealed class CameraDisplayView : MonoBehaviour
     {
         if (Status == CameraDisplayStatus.Streaming && cameraImage.texture == null)
             ShowWaiting();
-
-        RefreshImageSize();
     }
 
     /// <summary>
@@ -142,7 +141,12 @@ public sealed class CameraDisplayView : MonoBehaviour
         Status = CameraDisplayStatus.Streaming;
         statusIndicator.color = new Color32(87, 204, 189, 255);
         statusText.text = "Video input active";
-        statusDetail.text = string.IsNullOrEmpty(description) ? "Video input is available." : description;
+        string nextDetail = string.IsNullOrEmpty(description) ? "Video input is available." : description;
+        if (!string.Equals(lastStatusDetail, nextDetail, StringComparison.Ordinal))
+        {
+            lastStatusDetail = nextDetail;
+            statusDetail.text = nextDetail;
+        }
         RefreshImageSize();
         return true;
     }
@@ -153,6 +157,7 @@ public sealed class CameraDisplayView : MonoBehaviour
             return;
 
         ClearFrame();
+        lastStatusDetail = null;
         Status = CameraDisplayStatus.Waiting;
         placeholderTitle.text = "Waiting for video input";
         placeholderHint.text = "The camera preview will appear here.";
@@ -167,6 +172,7 @@ public sealed class CameraDisplayView : MonoBehaviour
             return;
 
         ClearFrame();
+        lastStatusDetail = null;
         Status = CameraDisplayStatus.Error;
         placeholderTitle.text = "Camera unavailable";
         placeholderHint.text = "Check the video input and try again.";
