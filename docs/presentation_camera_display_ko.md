@@ -2,7 +2,7 @@
 
 ## 실행
 
-1. Unity Hub에서 `unity/ARInstruments`를 Unity **6000.0.25f1**으로 엽니다.
+1. Unity Hub에서 `unity/ARInstruments`를 Unity **6000.6.8f1**으로 엽니다.
 2. `Assets/Presentation/Scenes/CameraDisplayPreview.unity`를 엽니다.
 3. Play를 누르면 네 가지 색상의 테스트 영상과 `Test pattern preview` 상태 문구가 표시됩니다. 카메라 장치나 촬영 권한은 사용하지 않습니다.
 4. 하단 `Mirror view` 체크박스 또는 라벨을 클릭하면 영상이 화면 기준으로 좌우 반전됩니다. 다시 클릭하면 원래 표시로 돌아갑니다.
