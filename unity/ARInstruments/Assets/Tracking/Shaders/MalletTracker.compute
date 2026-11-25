@@ -14,8 +14,6 @@ float3 RightUpperHSV;
 // [3]=右手X坐标和, [4]=右手Y坐标和, [5]=右手面积像素数
 RWStructuredBuffer<uint> ResultBuffer;
 
-groupshared uint gs_Accum[6];
-
 // RGB 转 HSV 的核心算法 (GPU 极速版)
 float3 RGBtoHSV(float3 c)
 {
@@ -27,54 +25,42 @@ float3 RGBtoHSV(float3 c)
     return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
 }
 
-bool MatchHSV(float3 hsv, float3 lower, float3 upper)
-{
-    bool hueMatch = (lower.x <= upper.x)
-        ? (hsv.x >= lower.x && hsv.x <= upper.x)
-        : (hsv.x >= lower.x || hsv.x <= upper.x);
-    return hueMatch &&
-           hsv.y >= lower.y && hsv.y <= upper.y &&
-           hsv.z >= lower.z && hsv.z <= upper.z;
-}
-
 // 8x8 线程组，每次并发处理 64 个像素
 [numthreads(8, 8, 1)]
-void CSMain(uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+void CSMain(uint3 id : SV_DispatchThreadID)
 {
-    if (groupIndex < 6)
-    {
-        gs_Accum[groupIndex] = 0;
-    }
-    GroupMemoryBarrierWithGroupSync();
-
     uint width;
     uint height;
     InputTexture.GetDimensions(width, height);
 
-    if (id.x < width && id.y < height)
+    // 防止越界
+    if (id.x >= width || id.y >= height)
     {
-        float4 color = InputTexture[id.xy];
-        float3 hsv = RGBtoHSV(color.rgb);
-
-        if (MatchHSV(hsv, LeftLowerHSV, LeftUpperHSV))
-        {
-            InterlockedAdd(gs_Accum[0], id.x);
-            InterlockedAdd(gs_Accum[1], id.y);
-            InterlockedAdd(gs_Accum[2], 1);
-        }
-
-        if (MatchHSV(hsv, RightLowerHSV, RightUpperHSV))
-        {
-            InterlockedAdd(gs_Accum[3], id.x);
-            InterlockedAdd(gs_Accum[4], id.y);
-            InterlockedAdd(gs_Accum[5], 1);
-        }
+        return;
     }
 
-    GroupMemoryBarrierWithGroupSync();
+    // 读取当前像素颜色并转为 HSV
+    float4 color = InputTexture[id.xy];
+    float3 hsv = RGBtoHSV(color.rgb);
 
-    if (groupIndex < 6 && gs_Accum[groupIndex] > 0)
+    // --- 左手(如粉色)检测 ---
+    if (hsv.x >= LeftLowerHSV.x && hsv.x <= LeftUpperHSV.x &&
+        hsv.y >= LeftLowerHSV.y && hsv.y <= LeftUpperHSV.y &&
+        hsv.z >= LeftLowerHSV.z && hsv.z <= LeftUpperHSV.z)
     {
-        InterlockedAdd(ResultBuffer[groupIndex], gs_Accum[groupIndex]);
+        // 核心原子操作：线程安全地将当前坐标累加到显存中
+        InterlockedAdd(ResultBuffer[0], id.x);
+        InterlockedAdd(ResultBuffer[1], id.y);
+        InterlockedAdd(ResultBuffer[2], 1);
+    }
+
+    // --- 右手(如绿色)检测 ---
+    if (hsv.x >= RightLowerHSV.x && hsv.x <= RightUpperHSV.x &&
+        hsv.y >= RightLowerHSV.y && hsv.y <= RightUpperHSV.y &&
+        hsv.z >= RightLowerHSV.z && hsv.z <= RightUpperHSV.z)
+    {
+        InterlockedAdd(ResultBuffer[3], id.x);
+        InterlockedAdd(ResultBuffer[4], id.y);
+        InterlockedAdd(ResultBuffer[5], 1);
     }
 }

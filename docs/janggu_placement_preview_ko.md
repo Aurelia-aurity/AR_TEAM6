@@ -4,7 +4,7 @@ FR-003의 장구 생성·위치·회전·크기 설정과 FR-004의 합성 구�
 
 ## 실행
 
-1. Unity 6000.6.8f1에서 `Assets/Presentation/Scenes/JangguPlacementPreview.unity`를 엽니다.
+1. Unity 6000.0.25f1에서 `Assets/Presentation/Scenes/JangguPlacementPreview.unity`를 엽니다.
 2. Play를 누릅니다. 실제 카메라를 열지 않고 테스트 영상 위에 장구를 표시합니다.
 3. 왼쪽 `INSTRUMENT POSE` 패널의 슬라이더로 위치 X/Y/Z(미터), 회전 X/Y/Z(도), 균일 크기를 조절합니다.
 4. `Reset pose`를 누르면 실행 시작 시의 위치·회전·크기로 돌아갑니다.

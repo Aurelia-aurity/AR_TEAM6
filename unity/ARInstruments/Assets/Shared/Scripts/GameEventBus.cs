@@ -41,11 +41,6 @@ public static class GameEventBus
 
     public static void PublishCameraInputState(CameraInputStateData state)
     {
-        if (string.IsNullOrEmpty(state.CameraId))
-        {
-            return;
-        }
-
         cameraStates[state.CameraId] = state;
         OnCameraInputStateChanged?.Invoke(state);
     }
@@ -54,12 +49,6 @@ public static class GameEventBus
     // waiting for a new frame; the cached state contains no texture.
     public static bool TryGetCameraInputState(string cameraId, out CameraInputStateData state)
     {
-        if (string.IsNullOrEmpty(cameraId))
-        {
-            state = default;
-            return false;
-        }
-
         return cameraStates.TryGetValue(cameraId, out state);
     }
 
@@ -71,12 +60,6 @@ public static class GameEventBus
         cameraStates.Clear();
         OnCameraFrameReceived = null;
         OnCameraInputStateChanged = null;
-        OnMalletsTracked = null;
-        OnTrackingLost = null;
-        OnTrackingLostAt = null;
-        OnRawMalletSample = null;
-        OnCalibrationCompleted = null;
-        OnValidHit = null;
     }
 
     // A -> B, C: left and right mallet states from one analyzed frame.
@@ -97,9 +80,6 @@ public static class GameEventBus
 
     // A -> calibration: raw values required to build a CoordinateMapper calibration.
     public static Action<RawMalletSample> OnRawMalletSample;
-
-    // B -> A: calibrated screen pixel bounds and area bounds.
-    public static Action<Vector2, Vector2, double, double> OnCalibrationCompleted;
 
     // C -> presentation and audio: one valid hit.
     public static Action<HitEvent> OnValidHit;
