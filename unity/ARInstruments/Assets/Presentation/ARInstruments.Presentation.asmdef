@@ -1,5 +1,10 @@
 {
     "name": "ARInstruments.Presentation",
-    "references": ["ARInstruments.Shared", "ARInstruments.Tracking"],
+    "references": [
+        "ARInstruments.Shared",
+        "ARInstruments.Tracking",
+        "Unity.ugui",
+        "Unity.InputSystem"
+    ],
     "autoReferenced": true
 }

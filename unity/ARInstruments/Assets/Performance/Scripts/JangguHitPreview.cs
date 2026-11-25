@@ -11,6 +11,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
     [SerializeField] private Transform janggu;
     [SerializeField] private Camera previewCamera;
+    [SerializeField] private JangguAudioPreview hitAudio;
 
     [SerializeField] private RectTransform leftMarker;
     [SerializeField] private RectTransform rightMarker;
@@ -37,6 +38,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     private double timestampMs;
     private int hits;
     private float? lastHitStrength;
+    private string lastHitSound;
     private Coroutine scenarioPlayback;
     private Vector3 positionBeforeScenario;
     private PreviewMallet scenarioMallet;
@@ -145,6 +147,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         faceAHits = 0;
         faceBHits = 0;
         lastHitStrength = null;
+        lastHitSound = null;
         faceALabel.text = "A";
         faceBLabel.text = "B";
         RepositionMallets();
@@ -327,6 +330,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     {
         hits = 0;
         lastHitStrength = null;
+        lastHitSound = null;
         ResetTracking();
         Vector3 start = surface.TransformPoint(new Vector3(horizontalOffset, 0f, depths[0]));
         scenarioMallet.Position = start;
@@ -380,7 +384,7 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     private string FormatHitStrength()
     {
         return lastHitStrength.HasValue
-            ? $"Last strength: {lastHitStrength.Value * 100f:0}%"
+            ? $"Last strength: {lastHitStrength.Value * 100f:0}% ({lastHitSound})"
             : "Last strength: --";
     }
 
@@ -405,6 +409,15 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         {
             hits++;
             lastHitStrength = hit.HitForce;
+            bool isDeok = hit.InstrumentId == RegionA;
+            int strength = JangguSoundProfile.GetStrengthIndex(hit.HitForce);
+            string strengthName = strength == 0 ? "strong" : strength == 1 ? "medium" : "weak";
+            lastHitSound = $"{(isDeok ? "Deok" : "Kung")} {strengthName}";
+            if (hitAudio != null)
+            {
+                int sample = isDeok ? strength : JangguSoundProfile.StrengthCount + strength;
+                hitAudio.PlaySample(sample);
+            }
             string malletLabel = hit.MalletId == 0 ? "L" : "R";
             if (hit.InstrumentId == RegionA)
             {

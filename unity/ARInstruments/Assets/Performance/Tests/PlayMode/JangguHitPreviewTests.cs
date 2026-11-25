@@ -42,6 +42,49 @@ public sealed class JangguHitPreviewTests
         Assert.That(face.text, Is.EqualTo("B - R"));
     }
 
+    [UnityTest]
+    public IEnumerator ValidHits_PlayBothFacesAndKeepRehitsRinging()
+    {
+        yield return LoadPreview();
+        Scene scene = SceneManager.GetSceneByPath(ScenePath);
+
+        var audio = FindComponent<JangguAudioPreview>(scene, "Janggu Audio Preview");
+        for (int sample = 0; sample < JangguSoundProfile.SampleCount; sample++)
+        {
+            audio.SetGain(sample, 1f);
+            audio.SetPitch(sample, sample < JangguSoundProfile.StrengthCount ? 1f : 0.9f);
+        }
+
+        yield return VerifyScenario(scene, "Cross outside pad", 0, 0);
+        Assert.That(CountPlayingSources(scene, 1f), Is.Zero, "An outside crossing must stay silent.");
+
+        yield return VerifyScenario(scene, "Hit and stay behind", 0, 1);
+        Assert.That(CountPlayingSources(scene, 1f), Is.EqualTo(1), "Face A must play Deok.");
+
+        FindComponent<Slider>(scene, "Rotation Y Slider").value = 180f;
+        yield return null;
+        yield return VerifyScenario(scene, "Lift and hit again", 1, 2, "B");
+        Assert.That(CountPlayingSources(scene, 0.9f), Is.EqualTo(2),
+            "Both face B hits must use the shared Kung pitch and remain audible together.");
+    }
+
+    private static int CountPlayingSources(Scene scene, float pitch)
+    {
+        int count = 0;
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            foreach (var source in root.GetComponentsInChildren<AudioSource>())
+            {
+                if (source.isPlaying && Mathf.Approximately(source.pitch, pitch))
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
     private static IEnumerator LoadPreview()
     {
         yield return EditorSceneManager.LoadSceneAsyncInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Additive));
