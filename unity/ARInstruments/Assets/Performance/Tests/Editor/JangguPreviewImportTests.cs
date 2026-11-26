@@ -27,7 +27,7 @@ public sealed class JangguPreviewImportTests
         platform = BuildPipeline.GetBuildTargetGroup(EditorUserBuildSettings.activeBuildTarget);
         fixturePath = $"Assets/Editor/JangguImportTest-{Guid.NewGuid():N}.wav";
         Assert.That(AssetDatabase.CopyAsset(
-            "Assets/Performance/Audio/JangguPreview/Janggu_1_1.wav", fixturePath), Is.True);
+            "Assets/Performance/Audio/Janggu/Janggu_1_1.wav", fixturePath), Is.True);
     }
 
     [TearDown]

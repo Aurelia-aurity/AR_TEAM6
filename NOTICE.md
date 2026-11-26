@@ -7,7 +7,7 @@
 - 제공 기관 및 출처: [국립국악원 국악기 디지털 음원 — 단음 다운로드](https://www.gugak.go.kr/digitaleum/front/monotone/list.do)
 - 이용 조건: [공공누리 제1유형(출처표시)](https://www.kogl.or.kr/info/licenseType1.do). 출처를 표시하면 상업적·비상업적 이용과 변경이 가능합니다.
 
-이 고지는 [프로젝트에 포함된 장구 음원 폴더](unity/ARInstruments/Assets/Performance/Audio/JangguPreview)의 다음 WAV 파일 9개에 적용됩니다.
+이 고지는 [프로젝트에 포함된 장구 음원 폴더](unity/ARInstruments/Assets/Performance/Audio/Janggu)의 다음 WAV 파일 9개에 적용됩니다.
 
 | 장구 주법 | 강 | 중 | 약 |
 | --- | --- | --- | --- |
