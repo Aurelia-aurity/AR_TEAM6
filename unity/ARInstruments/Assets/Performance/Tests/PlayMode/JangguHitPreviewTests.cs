@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -11,6 +12,118 @@ using UnityEngine.UI;
 public sealed class JangguHitPreviewTests
 {
     private const string ScenePath = "Assets/Performance/Scenes/JangguHitPreview.unity";
+
+    [UnityTest]
+    public IEnumerator ActualHeadPositions_InwardStrikesHitOnce_WithdrawalStaysSilent()
+    {
+        yield return VerifyActualHeadPositions(false);
+    }
+
+    [UnityTest]
+    public IEnumerator BukHeadPositions_InwardStrikesHitOnce_WithdrawalStaysSilent()
+    {
+        yield return VerifyActualHeadPositions(true);
+    }
+
+    private static IEnumerator VerifyActualHeadPositions(bool useBuk)
+    {
+        yield return LoadPreview();
+        Scene scene = SceneManager.GetSceneByPath(ScenePath);
+        var audio = FindComponent<JangguAudioPreview>(scene, "Janggu Audio Preview");
+        for (int sample = 0; sample < JangguSoundProfile.SampleCount; sample++)
+        {
+            audio.SetGain(sample, 1f);
+            audio.SetPitch(sample, 1f);
+        }
+        Transform headRoot = null;
+        if (useBuk)
+        {
+            JangguHitPreview preview = FindComponent<JangguHitPreview>(scene, "Preview Mallets");
+            preview.enabled = false;
+            // Allow the old strike surfaces to be destroyed before looking up the new ones.
+            yield return null;
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Presentation/Prefabs/Buk.prefab");
+            GameObject buk = Object.Instantiate(prefab);
+            SceneManager.MoveGameObjectToScene(buk, scene);
+            typeof(JangguHitPreview).GetField("janggu",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(preview, buk.transform);
+            preview.enabled = true;
+            headRoot = buk.transform;
+        }
+        foreach (float rotation in new[] { 0f, 180f })
+        {
+            // Measure the rest geometry after the preceding hits' visual vibration finishes.
+            yield return new WaitForSecondsRealtime(0.2f);
+            FindComponent<Slider>(scene, "Rotation Y Slider").value = rotation;
+            yield return null;
+            MeshFilter headA = headRoot == null ? FindComponent<MeshFilter>(scene, "Head_A_Inner")
+                : System.Array.Find(headRoot.GetComponentsInChildren<MeshFilter>(), mesh => mesh.name == "Head_A_Inner");
+            MeshFilter headB = headRoot == null ? FindComponent<MeshFilter>(scene, "Head_B_Inner")
+                : System.Array.Find(headRoot.GetComponentsInChildren<MeshFilter>(), mesh => mesh.name == "Head_B_Inner");
+            Vector3 centerA = headA.transform.TransformPoint(headA.sharedMesh.bounds.center);
+            Vector3 centerB = headB.transform.TransformPoint(headB.sharedMesh.bounds.center);
+            Vector3 drumCenter = (centerA + centerB) * 0.5f;
+            foreach (MeshFilter head in new[] { headA, headB })
+            {
+                Vector3 faceCenter = head.transform.TransformPoint(head.sharedMesh.bounds.center);
+                Vector3 outward = (faceCenter - drumCenter).normalized;
+                Transform strike = FindComponent<Transform>(scene, head.name + " Strike Surface");
+                Assert.That(Vector3.Dot(strike.forward, outward), Is.GreaterThan(0.99f), head.name);
+                Assert.That(Vector3.Dot(strike.position - faceCenter, outward), Is.GreaterThanOrEqualTo(-0.00001f),
+                    "The strike plane must lie on the outer side of the mesh.");
+                for (int malletId = 0; malletId < 2; malletId++)
+                {
+                    audio.Stop();
+                    var hits = new List<HitEvent>();
+                    using (var detector = new HitDetectionCore())
+                    {
+                        detector.RegisterPad(new InstrumentPad
+                        {
+                            PadId = head == headA ? "janggu_head_a_inner" : "janggu_head_b_inner",
+                            HitSurface = strike,
+                            HitBox2D = new Rect(-0.1f, -0.1f, 0.2f, 0.2f)
+                        });
+                        GameEventBus.OnValidHit += hits.Add;
+                        try
+                        {
+                            // Derive the trajectory from model geometry, never the generated surface normal.
+                            Submit(detector, faceCenter - outward * 0.05f, 0, malletId);
+                            Submit(detector, faceCenter + outward * 0.04f, 33, malletId);
+                            Assert.That(hits, Is.Empty, "An initial withdrawal must stay silent.");
+                            Assert.That(CountPlayingSources(scene, 1f), Is.Zero);
+                            Submit(detector, faceCenter + outward * 0.08f, 66, malletId);
+                            Submit(detector, faceCenter - outward * 0.05f, 99, malletId);
+                            Assert.That(hits, Has.Count.EqualTo(1), head.name);
+                            Assert.That(hits[0].MalletId, Is.EqualTo(malletId));
+                            Assert.That(hits[0].InstrumentId,
+                                Is.EqualTo(head == headA ? "janggu_head_a_inner" : "janggu_head_b_inner"));
+                            Assert.That(CountPlayingSources(scene, 1f), Is.EqualTo(1), "A strike must play once.");
+                            Submit(detector, faceCenter - outward * 0.08f, 132, malletId);
+                            Submit(detector, faceCenter + outward * 0.04f, 165, malletId);
+                            Submit(detector, faceCenter - outward * 0.05f, 198, malletId);
+                            Assert.That(hits, Has.Count.EqualTo(1), "Contact jitter must not replay audio.");
+                            Submit(detector, faceCenter + outward * 0.34f, 231, malletId);
+                            Assert.That(hits, Has.Count.EqualTo(1), "Lifting must stay silent.");
+                            Assert.That(CountPlayingSources(scene, 1f), Is.EqualTo(1), "Withdrawal must not start another sound.");
+                            Submit(detector, faceCenter - outward * 0.05f, 264, malletId);
+                            Assert.That(hits, Has.Count.EqualTo(2), "A new strike after lifting must hit once.");
+                            Assert.That(CountPlayingSources(scene, 1f), Is.EqualTo(2));
+                        }
+                        finally { GameEventBus.OnValidHit -= hits.Add; }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void Submit(HitDetectionCore detector, Vector3 position, double time, int malletId)
+    {
+        detector.ProcessMalletState(new MalletState
+        {
+            Position = position, TimestampMs = time, MalletId = malletId, Confidence = 1f
+        });
+    }
 
     [UnityTest]
     public IEnumerator ScenarioButtons_MoveSelectedMalletAndReportExpectedHits()

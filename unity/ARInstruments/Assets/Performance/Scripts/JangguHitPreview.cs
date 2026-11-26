@@ -46,8 +46,8 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
     private void OnEnable()
     {
-        padA = CreatePad("Head_A_Inner", RegionA, 1f);
-        padB = CreatePad("Head_B_Inner", RegionB, -1f);
+        padA = CreatePad("Head_A_Inner", "Head_B_Inner", RegionA);
+        padB = CreatePad("Head_B_Inner", "Head_A_Inner", RegionB);
         if (padA == null || padB == null)
         {
             Debug.LogError("The preview requires both inner drumhead meshes.", this);
@@ -71,17 +71,23 @@ public sealed class JangguHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         ResetMallet();
     }
 
-    private InstrumentPad CreatePad(string meshName, string regionId, float outwardSign)
+    private InstrumentPad CreatePad(string meshName, string oppositeMeshName, string regionId)
     {
-        MeshFilter head = System.Array.Find(janggu.GetComponentsInChildren<MeshFilter>(),
-            mesh => mesh.name == meshName);
-        if (head == null || head.sharedMesh == null)
+        MeshFilter[] heads = janggu.GetComponentsInChildren<MeshFilter>();
+        MeshFilter head = System.Array.Find(heads, mesh => mesh.name == meshName);
+        MeshFilter opposite = System.Array.Find(heads, mesh => mesh.name == oppositeMeshName);
+        if (head == null || head.sharedMesh == null || opposite == null || opposite.sharedMesh == null)
         {
             return null;
         }
 
         Bounds bounds = head.sharedMesh.bounds;
         Transform meshTransform = head.transform;
+        Vector3 headCenter = meshTransform.TransformPoint(bounds.center);
+        Vector3 oppositeCenter = opposite.transform.TransformPoint(opposite.sharedMesh.bounds.center);
+        // A/B labels do not imply an axis sign: Buk and Janggu use opposite layouts.
+        Vector3 headAxis = meshTransform.TransformDirection(Vector3.right);
+        float outwardSign = Vector3.Dot(headAxis, headCenter - oppositeCenter) >= 0f ? 1f : -1f;
         Transform strikeSurface = new GameObject(meshName + " Strike Surface").transform;
         Vector3 center = bounds.center;
         center.x = outwardSign > 0f ? bounds.max.x : bounds.min.x;
