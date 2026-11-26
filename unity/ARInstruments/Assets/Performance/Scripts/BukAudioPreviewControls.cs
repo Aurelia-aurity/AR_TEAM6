@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>Binds the scene-authored Buk comparison controls to the shared sample player.</summary>
-public sealed class BukAudioControls : MonoBehaviour
+public sealed class BukAudioPreviewControls : MonoBehaviour
 {
     [SerializeField] private InstrumentSamplePlayer player;
     [SerializeField] private InputField[] gainFields;

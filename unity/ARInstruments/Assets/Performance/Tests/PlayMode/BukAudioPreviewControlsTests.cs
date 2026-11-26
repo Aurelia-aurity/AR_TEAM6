@@ -7,7 +7,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
-public sealed class BukAudioControlsTests
+public sealed class BukAudioPreviewControlsTests
 {
     private const string Path = "Assets/Performance/Scenes/BukAudioPreview.unity";
     private static Scene Scene => SceneManager.GetSceneByPath(Path);
@@ -16,7 +16,7 @@ public sealed class BukAudioControlsTests
     public IEnumerator ComparisonButtons_TuneSessionAndRetainRingingUntilStopped()
     {
         yield return Load();
-        var player = Find<InstrumentSamplePlayer>("Buk Audio");
+        var player = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         Assert.That(Find<RectTransform>("Audio Controls").gameObject.activeInHierarchy, Is.True);
         float savedGain = player.SavedProfile.GetGain(0);
         Find<InputField>("Strong Gain Input").onEndEdit.Invoke("2.40");
@@ -47,7 +47,7 @@ public sealed class BukAudioControlsTests
     public IEnumerator SceneButtons_PlayEverySingleAndAllNineFaceCombinations()
     {
         yield return Load();
-        var player = Find<InstrumentSamplePlayer>("Buk Audio");
+        var player = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         string[] names = { "Strong", "Medium", "Weak" };
         float[] pitches = { 1.2f, 0.9f, 0.7f };
         for (int sample = 0; sample < 3; sample++) player.SetPitch(sample, pitches[sample]);
@@ -79,10 +79,10 @@ public sealed class BukAudioControlsTests
     public IEnumerator DisabledPlayer_ActualButtonsCannotPlayWithoutLimiter()
     {
         yield return Load();
-        var player = Find<InstrumentSamplePlayer>("Buk Audio");
+        var player = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         player.enabled = false;
         yield return null;
-        Assert.That(player.GetComponent<JangguOutputLimiter>() == null, Is.True);
+        Assert.That(player.GetComponent<InstrumentOutputLimiter>() == null, Is.True);
         Find<Button>("Strong Play").onClick.Invoke();
         Find<Button>("Strong + Strong").onClick.Invoke();
         player.PlaySample(1);
@@ -91,7 +91,7 @@ public sealed class BukAudioControlsTests
         yield return null;
         Find<Button>("Strong Play").onClick.Invoke();
         Assert.That(Playing(player), Is.EqualTo(1));
-        Assert.That(player.GetComponent<JangguOutputLimiter>(), Is.Not.Null);
+        Assert.That(player.GetComponent<InstrumentOutputLimiter>(), Is.Not.Null);
     }
 
     private static int Playing(InstrumentSamplePlayer player)
@@ -106,8 +106,8 @@ public sealed class BukAudioControlsTests
     public IEnumerator ProjectTuning_ActualListenerOutputStaysWithinCeiling()
     {
         yield return Load();
-        var player = Find<InstrumentSamplePlayer>("Buk Audio");
-        Assert.That(player.GetComponent<JangguOutputLimiter>().enabled, Is.True);
+        var player = Find<InstrumentSamplePlayer>("Buk Audio Preview");
+        Assert.That(player.GetComponent<InstrumentOutputLimiter>().enabled, Is.True);
         for (int sample = 0; sample < 3; sample++)
         {
             Assert.That(player.GetGain(sample), Is.EqualTo(3.9f));
@@ -150,7 +150,7 @@ public sealed class BukAudioControlsTests
             }
         } while (Time.realtimeSinceStartupAsDouble < end);
         Assert.That(peak, Is.GreaterThan(0.001f), label + " must produce measurable output.");
-        Assert.That(peak, Is.LessThanOrEqualTo(JangguPeakLimiter.Ceiling + 0.0001f), label);
+        Assert.That(peak, Is.LessThanOrEqualTo(InstrumentPeakLimiter.Ceiling + 0.0001f), label);
         TestContext.Out.WriteLine($"{label}: listener peak={peak:F6}");
     }
 
@@ -158,8 +158,8 @@ public sealed class BukAudioControlsTests
     public IEnumerator JangguAndBuk_ShareLimiterUntilLastPlayerCloses()
     {
         yield return Load();
-        var buk = Find<InstrumentSamplePlayer>("Buk Audio");
-        var limiter = buk.GetComponent<JangguOutputLimiter>();
+        var buk = Find<InstrumentSamplePlayer>("Buk Audio Preview");
+        var limiter = buk.GetComponent<InstrumentOutputLimiter>();
         Assert.That(limiter, Is.Not.Null);
         var jangguObject = new GameObject("Additional janggu player");
         try
@@ -167,10 +167,10 @@ public sealed class BukAudioControlsTests
             var janggu = jangguObject.AddComponent<JangguAudioPreview>();
             buk.enabled = false;
             yield return null;
-            Assert.That(buk.GetComponent<JangguOutputLimiter>(), Is.SameAs(limiter));
+            Assert.That(buk.GetComponent<InstrumentOutputLimiter>(), Is.SameAs(limiter));
             janggu.enabled = false;
             yield return null;
-            Assert.That(buk.GetComponent<JangguOutputLimiter>() == null, Is.True);
+            Assert.That(buk.GetComponent<InstrumentOutputLimiter>() == null, Is.True);
         }
         finally { Object.Destroy(jangguObject); }
     }

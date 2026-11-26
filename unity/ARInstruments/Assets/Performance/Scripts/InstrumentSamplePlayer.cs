@@ -22,7 +22,7 @@ public class InstrumentSamplePlayer : MonoBehaviour
     private readonly List<AudioSource> primaryVoices = new List<AudioSource>(InitialVoicesPerSource);
     private readonly List<AudioSource> secondaryVoices = new List<AudioSource>(InitialVoicesPerSource);
 
-    private readonly List<JangguOutputLimiter> previewLimiters = new();
+    private readonly List<InstrumentOutputLimiter> previewLimiters = new();
     private Coroutine pendingLimiterAcquisition;
 
     protected virtual void Awake()
@@ -54,10 +54,10 @@ public class InstrumentSamplePlayer : MonoBehaviour
                 continue;
             }
 
-            var limiter = listener.GetComponent<JangguOutputLimiter>();
+            var limiter = listener.GetComponent<InstrumentOutputLimiter>();
             if (limiter == null)
             {
-                limiter = listener.gameObject.AddComponent<JangguOutputLimiter>();
+                limiter = listener.gameObject.AddComponent<InstrumentOutputLimiter>();
                 limiter.PreviewUsers = 1;
                 previewLimiters.Add(limiter);
             }
@@ -161,7 +161,7 @@ public class InstrumentSamplePlayer : MonoBehaviour
         return true;
     }
 
-    public void PlayDeong(int strength)
+    public void PlayReference(int strength)
     {
         Play(primarySource, primaryVoices, Profile?.GetReference(strength), 1f, 1f);
     }
@@ -175,11 +175,11 @@ public class InstrumentSamplePlayer : MonoBehaviour
     public void PlayPair(int selection)
     {
         if (Profile == null) return;
-        int deokStrength = selection / StrengthCount;
-        int kungStrength = selection % StrengthCount;
-        int kungSample = Profile.SecondarySampleOffset + kungStrength;
-        Play(primarySource, primaryVoices, Profile?.GetSample(deokStrength), GetGain(deokStrength), GetPitch(deokStrength));
-        Play(secondarySource, secondaryVoices, Profile?.GetSample(kungSample), GetGain(kungSample), GetPitch(kungSample));
+        int primaryStrength = selection / StrengthCount;
+        int secondaryStrength = selection % StrengthCount;
+        int secondarySample = Profile.SecondarySampleOffset + secondaryStrength;
+        Play(primarySource, primaryVoices, Profile?.GetSample(primaryStrength), GetGain(primaryStrength), GetPitch(primaryStrength));
+        Play(secondarySource, secondaryVoices, Profile?.GetSample(secondarySample), GetGain(secondarySample), GetPitch(secondarySample));
     }
 
     public bool SaveTuning()

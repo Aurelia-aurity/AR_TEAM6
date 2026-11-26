@@ -45,7 +45,7 @@ internal sealed class InstrumentSoundProfileEditor : Editor
                 {
                     int selection = strength;
                     Play($"덩 {Strengths[strength]}", GetClip(deong, strength), 1f, 1f,
-                        () => ScenePreview?.PlayDeong(selection));
+                        () => ScenePreview?.PlayReference(selection));
                 }
             }
         }
@@ -151,7 +151,7 @@ internal sealed class InstrumentSoundProfileEditor : Editor
         EditorGUILayout.LabelField("좌고 · A/B 공통 음원", EditorStyles.boldLabel);
         int selected = DrawSampleSettings("좌고", "volumes", "pitches", 0);
         if (serializedObject.ApplyModifiedProperties() && ScenePreview != null)
-            foreach (var controls in FindObjectsByType<BukAudioControls>(FindObjectsSortMode.None))
+            foreach (var controls in FindObjectsByType<BukAudioPreviewControls>(FindObjectsSortMode.None))
                 controls.RefreshFromInspector(ScenePreview);
         var clips = serializedObject.FindProperty("clips");
         if (selected >= 0)
@@ -362,7 +362,7 @@ internal sealed class InstrumentSoundProfileEditor : Editor
             }
         }
 
-        new JangguPeakLimiter().Process(mixedSamples, first.channels, first.frequency);
+        new InstrumentPeakLimiter().Process(mixedSamples, first.channels, first.frequency);
 
         previewAssetPath = $"Assets/Editor/InstrumentPreview-{Guid.NewGuid():N}.wav";
         try

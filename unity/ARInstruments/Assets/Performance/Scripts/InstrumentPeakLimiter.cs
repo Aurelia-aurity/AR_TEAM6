@@ -1,6 +1,6 @@
 using System;
 
-public sealed class JangguPeakLimiter
+public sealed class InstrumentPeakLimiter
 {
     public const float Ceiling = 0.95f;
     private const float ReleaseSeconds = 0.05f;

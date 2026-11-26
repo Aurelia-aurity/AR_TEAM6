@@ -16,7 +16,7 @@ public sealed class BukHitPreviewTests
     public IEnumerator BothFaces_SelectSameTunedStrengthSamples_WithdrawalDoesNotReplay()
     {
         yield return Load();
-        var audio = Find<InstrumentSamplePlayer>("Buk Audio");
+        var audio = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         audio.SetPitch(0, 1.2f);
         audio.SetPitch(1, 0.9f);
         audio.SetPitch(2, 0.7f);
@@ -57,7 +57,7 @@ public sealed class BukHitPreviewTests
     public IEnumerator TwoTrackedMallets_PlayTogether_AndDisabledComponentsStaySilent()
     {
         yield return Load();
-        var audio = Find<InstrumentSamplePlayer>("Buk Audio");
+        var audio = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         var preview = Find<BukHitPreview>("Preview Mallets");
         MeshFilter a = Find<MeshFilter>("Head_A_Inner");
         MeshFilter b = Find<MeshFilter>("Head_B_Inner");
@@ -154,7 +154,7 @@ public sealed class BukHitPreviewTests
     private static IEnumerator Scenario(string name, int mallet, int expected, string region)
     {
         var hits = new List<HitEvent>();
-        var audio = Find<InstrumentSamplePlayer>("Buk Audio");
+        var audio = Find<InstrumentSamplePlayer>("Buk Audio Preview");
         audio.Stop();
         GameEventBus.OnValidHit += hits.Add;
         try

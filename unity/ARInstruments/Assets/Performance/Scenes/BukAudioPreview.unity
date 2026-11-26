@@ -1066,7 +1066,7 @@ GameObject:
   - component: {fileID: 100000002}
   - component: {fileID: 100000004}
   m_Layer: 0
-  m_Name: Buk Audio
+  m_Name: Buk Audio Preview
   m_TagString: Untagged
   m_IsActive: 1
 --- !u!4 &100000001

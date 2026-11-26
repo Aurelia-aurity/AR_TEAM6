@@ -2,9 +2,9 @@ using UnityEngine;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(AudioListener))]
-public sealed class JangguOutputLimiter : MonoBehaviour
+public sealed class InstrumentOutputLimiter : MonoBehaviour
 {
-    private readonly JangguPeakLimiter limiter = new JangguPeakLimiter();
+    private readonly InstrumentPeakLimiter limiter = new InstrumentPeakLimiter();
     private volatile int sampleRate;
 
     // Zero means scene-owned. Negative means scheduled for destruction.

@@ -62,7 +62,7 @@ public sealed class BukSoundProfileTests
                     Assert.That(clip, Is.Not.Null, arguments[6] as string);
                     var samples = new float[clip.samples * clip.channels];
                     Assert.That(clip.GetData(samples, 0), Is.True);
-                    Assert.That(samples.Max(Mathf.Abs), Is.LessThanOrEqualTo(JangguPeakLimiter.Ceiling + 0.0001f));
+                    Assert.That(samples.Max(Mathf.Abs), Is.LessThanOrEqualTo(InstrumentPeakLimiter.Ceiling + 0.0001f));
                     type.GetMethod("StopPlayback", flags).Invoke(editor, null);
                 }
         }
@@ -112,7 +112,7 @@ public sealed class BukSoundProfileTests
 
     private static void AssertLimited(string label, float[] raw, int channels, int rate)
     {
-        var limiter = new JangguPeakLimiter();
+        var limiter = new InstrumentPeakLimiter();
         float before = raw.Max(Mathf.Abs);
         float after = 0;
         for (int offset = 0; offset < raw.Length; offset += 512 * channels)
@@ -124,7 +124,7 @@ public sealed class BukSoundProfileTests
             after = Mathf.Max(after, block.Max(Mathf.Abs));
         }
         Assert.That(after, Is.GreaterThan(0f), label);
-        Assert.That(after, Is.LessThanOrEqualTo(JangguPeakLimiter.Ceiling + 0.00001f), label);
+        Assert.That(after, Is.LessThanOrEqualTo(InstrumentPeakLimiter.Ceiling + 0.00001f), label);
         TestContext.Out.WriteLine($"{label}: raw={before:F6}, limited={after:F6}");
     }
 }

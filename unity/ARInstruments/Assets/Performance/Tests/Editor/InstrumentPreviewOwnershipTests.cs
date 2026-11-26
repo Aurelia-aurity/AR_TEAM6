@@ -5,7 +5,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-public sealed class JangguPreviewOwnershipTests
+public sealed class InstrumentPreviewOwnershipTests
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.NonPublic;
     private Type editorType;
