@@ -26,6 +26,49 @@ public static class GameEventBus
 
     public static bool IsActiveContext(long version) => IsContextActive && version == ContextVersion;
 
+    public static bool IsSessionRunning { get; private set; }
+    public static InstrumentType SelectedInstrument { get; private set; } = InstrumentType.Janggu;
+    public static string SelectedCameraDeviceName { get; private set; } = string.Empty;
+
+    public static event Action<RunSessionRequest> OnRunSessionRequested;
+    public static event Action<RunSessionResult> OnRunSessionCompleted;
+    public static event Action<bool> OnSessionRunningChanged;
+    public static event Action<InstrumentType> OnInstrumentSelected;
+    public static event Action<string> OnCameraDeviceSelected;
+
+    public static void PublishRunSessionRequest(RunSessionRequest request)
+    {
+        OnRunSessionRequested?.Invoke(request);
+    }
+
+    public static void PublishRunSessionCompleted(RunSessionResult result)
+    {
+        OnRunSessionCompleted?.Invoke(result);
+    }
+
+    public static void PublishSessionRunningChanged(bool isRunning)
+    {
+        IsSessionRunning = isRunning;
+        OnSessionRunningChanged?.Invoke(isRunning);
+    }
+
+    public static void PublishInstrumentSelected(InstrumentType instrument)
+    {
+        if (!Enum.IsDefined(typeof(InstrumentType), instrument))
+        {
+            throw new ArgumentOutOfRangeException(nameof(instrument));
+        }
+
+        SelectedInstrument = instrument;
+        OnInstrumentSelected?.Invoke(instrument);
+    }
+
+    public static void PublishCameraDeviceSelected(string deviceName)
+    {
+        SelectedCameraDeviceName = deviceName ?? string.Empty;
+        OnCameraDeviceSelected?.Invoke(SelectedCameraDeviceName);
+    }
+
     // Camera publishers must use the publish methods so cached state stays in sync.
     public static event Action<CameraFrameData> OnCameraFrameReceived;
     public static event Action<CameraInputStateData> OnCameraInputStateChanged;
@@ -68,7 +111,15 @@ public static class GameEventBus
     {
         ContextVersion = 0;
         IsContextActive = true;
+        IsSessionRunning = false;
+        SelectedInstrument = InstrumentType.Janggu;
+        SelectedCameraDeviceName = string.Empty;
         cameraStates.Clear();
+        OnRunSessionRequested = null;
+        OnRunSessionCompleted = null;
+        OnSessionRunningChanged = null;
+        OnInstrumentSelected = null;
+        OnCameraDeviceSelected = null;
         OnCameraFrameReceived = null;
         OnCameraInputStateChanged = null;
         OnMalletsTracked = null;
@@ -76,6 +127,7 @@ public static class GameEventBus
         OnTrackingLostAt = null;
         OnRawMalletSample = null;
         OnCalibrationCompleted = null;
+        OnCalibrationReset = null;
         OnValidHit = null;
     }
 
@@ -100,6 +152,14 @@ public static class GameEventBus
 
     // B -> A: calibrated screen pixel bounds and area bounds.
     public static Action<Vector2, Vector2, double, double> OnCalibrationCompleted;
+
+    // B -> A: reset tracker calibration back to its default pixel and area bounds.
+    public static Action OnCalibrationReset;
+
+    public static void PublishCalibrationReset()
+    {
+        OnCalibrationReset?.Invoke();
+    }
 
     // C -> presentation and audio: one valid hit.
     public static Action<HitEvent> OnValidHit;

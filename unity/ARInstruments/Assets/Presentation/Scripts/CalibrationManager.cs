@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public enum CalibrationStep : byte
@@ -17,9 +18,14 @@ public enum CalibrationStep : byte
 /// </summary>
 public sealed class CalibrationManager : MonoBehaviour
 {
-    private const int SampleCount = 60;
+    public const int SamplesPerStep = 60;
+    private const string PrimaryCameraId = "primary";
 
     public CalibrationStep CurrentStep { get; private set; }
+    public int CurrentSampleCount => currentSampleIndex;
+    public bool IsCalibrating => CurrentStep > CalibrationStep.NotStarted && CurrentStep < CalibrationStep.Completed;
+
+    public event Action<CalibrationStep, int, int> ProgressChanged;
 
     private int currentSampleIndex;
     private double sumX;
@@ -37,21 +43,60 @@ public sealed class CalibrationManager : MonoBehaviour
     private double topRightArea;
     private double bottomLeftArea;
     private double bottomRightArea;
+    private bool hasCameraState;
+    private CameraInputStateData currentCameraState;
+    private string activeCameraDeviceName = string.Empty;
+    private Guid activeCameraSessionId;
+    private string calibrationDeviceName = string.Empty;
+    private Guid calibrationSessionId;
 
     private void OnEnable()
     {
+        hasCameraState = false;
+        currentCameraState = default;
+        activeCameraSessionId = Guid.Empty;
+        activeCameraDeviceName = GameEventBus.SelectedCameraDeviceName ?? string.Empty;
+        if (GameEventBus.TryGetCameraInputState(PrimaryCameraId, out CameraInputStateData cached)
+            && cached.SessionId != Guid.Empty)
+        {
+            currentCameraState = cached;
+            hasCameraState = true;
+            activeCameraSessionId = cached.SessionId;
+            if (!string.IsNullOrEmpty(cached.DeviceName))
+            {
+                activeCameraDeviceName = cached.DeviceName;
+            }
+        }
+
         GameEventBus.OnRawMalletSample += ProcessCalibrationSample;
+        GameEventBus.OnCameraDeviceSelected += OnCameraDeviceSelected;
+        GameEventBus.OnCameraInputStateChanged += OnCameraInputStateChanged;
     }
 
     private void OnDisable()
     {
         GameEventBus.OnRawMalletSample -= ProcessCalibrationSample;
+        GameEventBus.OnCameraDeviceSelected -= OnCameraDeviceSelected;
+        GameEventBus.OnCameraInputStateChanged -= OnCameraInputStateChanged;
+        hasCameraState = false;
     }
 
     public void Begin()
     {
+        ResetCalibrationData();
+        calibrationDeviceName = activeCameraDeviceName;
+        calibrationSessionId = activeCameraSessionId;
         CurrentStep = CalibrationStep.NotStarted;
         StartNextStep();
+    }
+
+    public void Cancel()
+    {
+        CurrentStep = CalibrationStep.NotStarted;
+        ResetCalibrationData();
+        calibrationDeviceName = string.Empty;
+        calibrationSessionId = Guid.Empty;
+        ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
     }
 
     public void StartNextStep()
@@ -66,6 +111,7 @@ public sealed class CalibrationManager : MonoBehaviour
         sumX = 0.0;
         sumY = 0.0;
         sumArea = 0.0;
+        ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
     }
 
     private void ProcessCalibrationSample(RawMalletSample sample)
@@ -81,19 +127,23 @@ public sealed class CalibrationManager : MonoBehaviour
         sumY += sample.PixelPosition.y;
         sumArea += sample.PixelArea;
         currentSampleIndex++;
-        if (currentSampleIndex >= SampleCount)
+        if (currentSampleIndex >= SamplesPerStep)
         {
             RecordCurrentStep();
             StartNextStep();
+        }
+        else
+        {
+            ProgressChanged?.Invoke(CurrentStep, currentSampleIndex, SamplesPerStep);
         }
     }
 
     private void RecordCurrentStep()
     {
         Vector2 averagePixel = new Vector2(
-            (float)(sumX / SampleCount),
-            (float)(sumY / SampleCount));
-        double averageArea = sumArea / SampleCount;
+            (float)(sumX / SamplesPerStep),
+            (float)(sumY / SamplesPerStep));
+        double averageArea = sumArea / SamplesPerStep;
 
         switch (CurrentStep)
         {
@@ -144,5 +194,143 @@ public sealed class CalibrationManager : MonoBehaviour
                 minArea,
                 maxArea);
         }
+    }
+
+    private void OnCameraDeviceSelected(string deviceName)
+    {
+        string nextDevice = deviceName ?? string.Empty;
+        bool changed = !string.Equals(activeCameraDeviceName, nextDevice, StringComparison.Ordinal);
+        activeCameraDeviceName = nextDevice;
+        if (changed && CurrentStep != CalibrationStep.NotStarted)
+        {
+            InvalidateCalibrationForDeviceChange();
+        }
+    }
+
+    private void InvalidateCalibrationForDeviceChange()
+    {
+        Cancel();
+        GameEventBus.PublishCalibrationReset();
+    }
+
+    private void OnCameraInputStateChanged(CameraInputStateData state)
+    {
+        if (!isActiveAndEnabled
+            || !string.Equals(state.CameraId, PrimaryCameraId, StringComparison.Ordinal)
+            || state.State < CameraInputState.Waiting
+            || state.State > CameraInputState.Stopped
+            || double.IsNaN(state.ChangedAtMs)
+            || double.IsInfinity(state.ChangedAtMs)
+            || state.ChangedAtMs < 0.0)
+        {
+            return;
+        }
+
+        if (hasCameraState
+            && state.SessionId != Guid.Empty
+            && currentCameraState.SessionId != Guid.Empty)
+        {
+            if (state.ChangedAtMs < currentCameraState.ChangedAtMs)
+            {
+                return;
+            }
+
+            bool newSession = state.SessionId != currentCameraState.SessionId;
+            if (newSession && state.State != CameraInputState.Waiting)
+            {
+                return;
+            }
+
+            if (!newSession)
+            {
+                if (state.State == CameraInputState.Waiting
+                    && currentCameraState.State != CameraInputState.Waiting)
+                {
+                    return;
+                }
+
+                if ((currentCameraState.State == CameraInputState.Error
+                        || currentCameraState.State == CameraInputState.Stopped)
+                    && state.State == CameraInputState.Streaming)
+                {
+                    return;
+                }
+            }
+        }
+
+        currentCameraState = state;
+        hasCameraState = true;
+        if (state.SessionId != Guid.Empty)
+        {
+            activeCameraSessionId = state.SessionId;
+        }
+
+        string incomingDevice = state.DeviceName ?? string.Empty;
+        if (!string.IsNullOrEmpty(incomingDevice))
+        {
+            activeCameraDeviceName = incomingDevice;
+        }
+
+        if (CurrentStep == CalibrationStep.NotStarted)
+        {
+            return;
+        }
+
+        bool deviceChanged = false;
+        if (!string.IsNullOrEmpty(incomingDevice))
+        {
+            if (!string.IsNullOrEmpty(calibrationDeviceName))
+            {
+                deviceChanged = !string.Equals(calibrationDeviceName, incomingDevice, StringComparison.Ordinal);
+            }
+            else if (calibrationSessionId != Guid.Empty
+                && state.SessionId != Guid.Empty
+                && state.SessionId != calibrationSessionId)
+            {
+                deviceChanged = true;
+            }
+        }
+        else if (calibrationSessionId != Guid.Empty
+            && state.SessionId != Guid.Empty
+            && state.SessionId != calibrationSessionId)
+        {
+            deviceChanged = true;
+        }
+
+        if (deviceChanged)
+        {
+            InvalidateCalibrationForDeviceChange();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(calibrationDeviceName) && !string.IsNullOrEmpty(incomingDevice))
+        {
+            calibrationDeviceName = incomingDevice;
+        }
+
+        if (calibrationSessionId == Guid.Empty && state.SessionId != Guid.Empty)
+        {
+            calibrationSessionId = state.SessionId;
+        }
+    }
+
+    private void ResetCalibrationData()
+    {
+        currentSampleIndex = 0;
+        sumX = 0.0;
+        sumY = 0.0;
+        sumArea = 0.0;
+        minPixel = Vector2.zero;
+        maxPixel = Vector2.zero;
+        minArea = 0.0;
+        maxArea = 0.0;
+        topLeft = Vector2.zero;
+        topRight = Vector2.zero;
+        bottomLeft = Vector2.zero;
+        bottomRight = Vector2.zero;
+        topLeftArea = 0.0;
+        topRightArea = 0.0;
+        bottomLeftArea = 0.0;
+        bottomRightArea = 0.0;
     }
 }
