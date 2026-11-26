@@ -26,6 +26,8 @@ public sealed class TrackingStatusHud : MonoBehaviour
     private MalletStatus right;
     private bool sessionRunning;
     private string cameraErrorMessage;
+    private bool hasCameraState;
+    private CameraInputStateData currentCameraState;
     private CalibrationStep calibrationStep;
     private int calibrationSample;
     private int calibrationTarget = CalibrationManager.SamplesPerStep;
@@ -55,6 +57,9 @@ public sealed class TrackingStatusHud : MonoBehaviour
         EnsureUiBuilt();
         ResetTrackingStates();
         sessionRunning = GameEventBus.IsSessionRunning;
+        cameraErrorMessage = null;
+        hasCameraState = false;
+        currentCameraState = default;
 
         GameEventBus.OnMalletsTracked += OnMalletsTracked;
         GameEventBus.OnTrackingLostAt += OnTrackingLostAt;
@@ -76,6 +81,7 @@ public sealed class TrackingStatusHud : MonoBehaviour
         GameEventBus.OnTrackingLostAt -= OnTrackingLostAt;
         GameEventBus.OnCameraInputStateChanged -= OnCameraInputStateChanged;
         GameEventBus.OnSessionRunningChanged -= OnSessionRunningChanged;
+        hasCameraState = false;
         if (calibrationManager != null)
         {
             calibrationManager.ProgressChanged -= OnCalibrationProgressChanged;
@@ -167,16 +173,55 @@ public sealed class TrackingStatusHud : MonoBehaviour
 
     private void OnCameraInputStateChanged(CameraInputStateData state)
     {
-        if (!string.Equals(state.CameraId, "primary", StringComparison.Ordinal))
+        if (!isActiveAndEnabled
+            || !string.Equals(state.CameraId, "primary", StringComparison.Ordinal)
+            || state.State < CameraInputState.Waiting
+            || state.State > CameraInputState.Stopped
+            || double.IsNaN(state.ChangedAtMs)
+            || double.IsInfinity(state.ChangedAtMs)
+            || state.ChangedAtMs < 0.0)
         {
             return;
         }
 
+        if (hasCameraState
+            && state.SessionId != Guid.Empty
+            && currentCameraState.SessionId != Guid.Empty)
+        {
+            if (state.ChangedAtMs < currentCameraState.ChangedAtMs)
+            {
+                return;
+            }
+
+            bool newSession = state.SessionId != currentCameraState.SessionId;
+            if (newSession && state.State != CameraInputState.Waiting)
+            {
+                return;
+            }
+
+            if (!newSession)
+            {
+                if (state.State == CameraInputState.Waiting
+                    && currentCameraState.State != CameraInputState.Waiting)
+                {
+                    return;
+                }
+
+                if ((currentCameraState.State == CameraInputState.Error
+                        || currentCameraState.State == CameraInputState.Stopped)
+                    && state.State == CameraInputState.Streaming)
+                {
+                    return;
+                }
+            }
+        }
+
+        currentCameraState = state;
+        hasCameraState = true;
+
         if (state.State == CameraInputState.Error)
         {
-            cameraErrorMessage = string.IsNullOrEmpty(state.Description)
-                ? "카메라 연결을 확인해 주세요."
-                : state.Description;
+            cameraErrorMessage = FormatCameraError(state);
             ResetTrackingStates();
             RefreshUi();
         }
@@ -192,6 +237,26 @@ public sealed class TrackingStatusHud : MonoBehaviour
         {
             ResetTrackingStates();
             RefreshUi();
+        }
+    }
+
+    private static string FormatCameraError(CameraInputStateData state)
+    {
+        if (!string.IsNullOrEmpty(state.Description))
+        {
+            return state.Description;
+        }
+
+        switch (state.Error)
+        {
+            case CameraInputError.DeviceNotFound:
+                return "선택한 카메라 장치를 찾을 수 없습니다. 연결을 확인해 주세요.";
+            case CameraInputError.StartFailed:
+                return "카메라 입력을 시작할 수 없습니다. 권한과 연결을 확인해 주세요.";
+            case CameraInputError.FrameTimeout:
+                return "카메라 프레임 수신이 중단되었습니다. 연결을 확인하고 다시 시작해 주세요.";
+            default:
+                return "카메라 연결을 확인해 주세요.";
         }
     }
 
@@ -339,14 +404,14 @@ public sealed class TrackingStatusHud : MonoBehaviour
 
     private string ResolveBannerText()
     {
-        if (calibrationStep > CalibrationStep.NotStarted && calibrationStep <= CalibrationStep.Completed)
-        {
-            return FormatCalibrationPrompt(calibrationStep, calibrationSample, calibrationTarget);
-        }
-
         if (!string.IsNullOrEmpty(cameraErrorMessage))
         {
             return $"카메라 오류: {cameraErrorMessage}";
+        }
+
+        if (calibrationStep > CalibrationStep.NotStarted && calibrationStep <= CalibrationStep.Completed)
+        {
+            return FormatCalibrationPrompt(calibrationStep, calibrationSample, calibrationTarget);
         }
 
         if (sessionRunning && (left.HasLostNotice || right.HasLostNotice) && (!left.Tracked || !right.Tracked))

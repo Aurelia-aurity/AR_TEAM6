@@ -14,6 +14,8 @@ public sealed class TrackingSessionController : MonoBehaviour
     private bool hasPendingRequest;
     private RunSessionRequest pendingRequest;
     private int waitingStreamRequestId;
+    private bool hasCameraState;
+    private CameraInputStateData currentCameraState;
 
     private string TargetCameraId =>
         tracker != null && !string.IsNullOrEmpty(tracker.cameraId) ? tracker.cameraId : "primary";
@@ -33,6 +35,8 @@ public sealed class TrackingSessionController : MonoBehaviour
 
     private void OnEnable()
     {
+        hasCameraState = false;
+        currentCameraState = default;
         if (tracker != null && !string.IsNullOrEmpty(GameEventBus.SelectedCameraDeviceName))
         {
             tracker.cameraDeviceName = GameEventBus.SelectedCameraDeviceName;
@@ -50,6 +54,8 @@ public sealed class TrackingSessionController : MonoBehaviour
         GameEventBus.OnCameraDeviceSelected -= OnCameraDeviceSelected;
         hasPendingRequest = false;
         waitingStreamRequestId = 0;
+        hasCameraState = false;
+        currentCameraState = default;
 
         if (tracker != null && tracker.enabled)
         {
@@ -90,7 +96,10 @@ public sealed class TrackingSessionController : MonoBehaviour
             {
                 tracker.enabled = false;
                 PublishCameraUnavailable(probeError);
-                GameEventBus.PublishSessionRunningChanged(false);
+                if (GameEventBus.IsSessionRunning)
+                {
+                    GameEventBus.PublishSessionRunningChanged(false);
+                }
                 return;
             }
 
@@ -151,7 +160,7 @@ public sealed class TrackingSessionController : MonoBehaviour
 
     private void OnCameraInputStateChanged(CameraInputStateData state)
     {
-        if (!isActiveAndEnabled || !string.Equals(state.CameraId, TargetCameraId, StringComparison.Ordinal))
+        if (!TryAcceptCameraState(state))
         {
             return;
         }
@@ -177,11 +186,68 @@ public sealed class TrackingSessionController : MonoBehaviour
             return;
         }
 
-        if (GameEventBus.IsSessionRunning
+        if (state.State == CameraInputState.Streaming)
+        {
+            if (!GameEventBus.IsSessionRunning)
+            {
+                GameEventBus.PublishSessionRunningChanged(true);
+            }
+        }
+        else if (GameEventBus.IsSessionRunning
             && (state.State == CameraInputState.Error || state.State == CameraInputState.Stopped))
         {
             GameEventBus.PublishSessionRunningChanged(false);
         }
+    }
+
+    private bool TryAcceptCameraState(CameraInputStateData state)
+    {
+        if (!isActiveAndEnabled
+            || !string.Equals(state.CameraId, TargetCameraId, StringComparison.Ordinal)
+            || state.State < CameraInputState.Waiting
+            || state.State > CameraInputState.Stopped
+            || double.IsNaN(state.ChangedAtMs)
+            || double.IsInfinity(state.ChangedAtMs)
+            || state.ChangedAtMs < 0.0)
+        {
+            return false;
+        }
+
+        if (hasCameraState
+            && state.SessionId != Guid.Empty
+            && currentCameraState.SessionId != Guid.Empty)
+        {
+            if (state.ChangedAtMs < currentCameraState.ChangedAtMs)
+            {
+                return false;
+            }
+
+            bool newSession = state.SessionId != currentCameraState.SessionId;
+            if (newSession && state.State != CameraInputState.Waiting)
+            {
+                return false;
+            }
+
+            if (!newSession)
+            {
+                if (state.State == CameraInputState.Waiting
+                    && currentCameraState.State != CameraInputState.Waiting)
+                {
+                    return false;
+                }
+
+                if ((currentCameraState.State == CameraInputState.Error
+                        || currentCameraState.State == CameraInputState.Stopped)
+                    && state.State == CameraInputState.Streaming)
+                {
+                    return false;
+                }
+            }
+        }
+
+        currentCameraState = state;
+        hasCameraState = true;
+        return true;
     }
 
     private void PublishCameraUnavailable(string error)
