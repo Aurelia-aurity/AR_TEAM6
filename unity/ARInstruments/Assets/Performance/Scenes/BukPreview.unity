@@ -6866,7 +6866,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: Sound not configured
+  m_Text: Hit sound not connected
 --- !u!222 &2073270380
 CanvasRenderer:
   m_ObjectHideFlags: 0
