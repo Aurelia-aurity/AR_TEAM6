@@ -5,6 +5,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
@@ -12,6 +13,74 @@ using UnityEngine.UI;
 public sealed class JangguHitPreviewTests
 {
     private const string ScenePath = "Assets/Performance/Scenes/JangguHitPreview.unity";
+
+    [UnityTest]
+    public IEnumerator DraggingMallet_UsesSharedHandlersAndLeavesOtherMalletStill()
+    {
+        yield return LoadPreview();
+        Scene scene = SceneManager.GetSceneByPath(ScenePath);
+        var preview = FindComponent<JangguHitPreview>(scene, "Preview Mallets");
+        RectTransform left = FindComponent<RectTransform>(scene, "Left Mallet");
+        RectTransform right = FindComponent<RectTransform>(scene, "Right Mallet");
+        Vector2 leftStart = left.anchoredPosition;
+        Vector2 rightStart = right.anchoredPosition;
+        Vector2 screenStart = RectTransformUtility.WorldToScreenPoint(null, left.position);
+        var pointer = new PointerEventData(EventSystem.current)
+        {
+            pointerId = 7,
+            button = PointerEventData.InputButton.Left,
+            pressPosition = screenStart,
+            position = screenStart,
+            pointerPressRaycast = new RaycastResult { gameObject = left.gameObject }
+        };
+
+        ((IBeginDragHandler)preview).OnBeginDrag(pointer);
+        pointer.position += new Vector2(80f, 40f);
+        ((IDragHandler)preview).OnDrag(pointer);
+        yield return null;
+        Assert.That(Vector2.Distance(left.anchoredPosition, leftStart), Is.GreaterThan(1f));
+        Assert.That(Vector2.Distance(right.anchoredPosition, rightStart), Is.LessThan(0.1f));
+
+        ((IEndDragHandler)preview).OnEndDrag(pointer);
+        Vector2 releasedPosition = left.anchoredPosition;
+        pointer.position += new Vector2(80f, 40f);
+        ((IDragHandler)preview).OnDrag(pointer);
+        yield return null;
+        Assert.That(Vector2.Distance(left.anchoredPosition, releasedPosition), Is.LessThan(0.1f));
+    }
+
+    [UnityTest]
+    public IEnumerator DisableDuringScenario_ReenableRestoresSingleHitAndSound()
+    {
+        yield return LoadPreview();
+        Scene scene = SceneManager.GetSceneByPath(ScenePath);
+        var preview = FindComponent<JangguHitPreview>(scene, "Preview Mallets");
+        FindComponent<Button>(scene, "Lift and hit again - Left").onClick.Invoke();
+        yield return null;
+        preview.enabled = false;
+        yield return null;
+        foreach (GameObject root in scene.GetRootGameObjects())
+        {
+            foreach (Transform child in root.GetComponentsInChildren<Transform>())
+            {
+                Assert.That(child.name.EndsWith(" Strike Surface"), Is.False,
+                    "Disabling the preview must remove its generated strike surfaces.");
+            }
+        }
+
+        preview.enabled = true;
+        yield return null;
+        var audio = FindComponent<JangguAudioPreview>(scene, "Janggu Audio Preview");
+        audio.Stop();
+        for (int sample = 0; sample < JangguSoundProfile.SampleCount; sample++)
+        {
+            audio.SetGain(sample, 1f);
+            audio.SetPitch(sample, 1f);
+        }
+        yield return VerifyScenario(scene, "Hit and stay behind", 0, 1);
+        Assert.That(CountPlayingSources(scene, 1f), Is.EqualTo(1),
+            "Re-enabling must not leave duplicate hit subscriptions or a running scenario.");
+    }
 
     [UnityTest]
     public IEnumerator ActualHeadPositions_InwardStrikesHitOnce_WithdrawalStaysSilent()

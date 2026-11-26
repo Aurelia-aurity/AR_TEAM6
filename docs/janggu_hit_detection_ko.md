@@ -23,7 +23,9 @@
 
 프리뷰는 양쪽 안쪽 원판의 실제 메시 중심을 비교해 각 면의 바깥쪽을 구하고, 그쪽을 `HitSurface`의 +Z로 설정한다. 장구와 북은 A·B면의 X축 배치가 반대이므로 면 이름만으로 방향을 정하지 않는다. 타격 평면도 메시 두께의 바깥쪽 끝에 둔다.
 
-현재 숫자 설정은 [HitDetectionCore.cs](../unity/ARInstruments/Assets/Performance/Scripts/HitDetectionCore.cs)의 C# 속성이다. 테스트 씬에서만 시험하려면 [JangguHitPreview.cs](../unity/ARInstruments/Assets/Performance/Scripts/JangguHitPreview.cs)의 `new HitDetectionCore()`에 조정할 속성을 지정한다. 프리뷰의 배치 슬라이더는 장구 위치와 회전을 바꾼다.
+현재 숫자 설정은 [HitDetectionCore.cs](../unity/ARInstruments/Assets/Performance/Scripts/HitDetectionCore.cs)의 C# 속성이다. 테스트 씬에서만 시험하려면 [DrumHitPreview.cs](../unity/ARInstruments/Assets/Performance/Scripts/DrumHitPreview.cs)의 `new HitDetectionCore()`에 조정할 속성을 지정한다. 프리뷰의 배치 슬라이더는 장구 위치와 회전을 바꾼다.
+
+`DrumHitPreview`는 면 생성, 배치 조절, 채 드래그와 시나리오 재생을 담당하는 공통 기반 컴포넌트다. [JangguHitPreview.cs](../unity/ARInstruments/Assets/Performance/Scripts/JangguHitPreview.cs)는 장구 모델 참조, 영역 ID와 덕·쿵 음원 매핑을 제공한다. 기존 장구 씬의 컴포넌트와 버튼 연결은 유지한다.
 
 ## 확인 방법
 
