@@ -15,12 +15,25 @@ public sealed class KalmanFilter2D
 
     public void SetNoiseParameters(float processNoise, float measurementNoise)
     {
-        q = Mathf.Max(0.0f, processNoise);
-        r = Mathf.Max(Mathf.Epsilon, measurementNoise);
+        if (float.IsFinite(processNoise))
+        {
+            q = Mathf.Max(0.0f, processNoise);
+        }
+
+        if (float.IsFinite(measurementNoise))
+        {
+            r = Mathf.Max(Mathf.Epsilon, measurementNoise);
+        }
     }
 
     public void Reset(Vector2 initialPosition)
     {
+        if (!IsFinite(initialPosition))
+        {
+            Clear();
+            return;
+        }
+
         position = initialPosition;
         velocity = Vector2.zero;
         p = 1.0f;
@@ -30,6 +43,12 @@ public sealed class KalmanFilter2D
 
     public void Reset(Vector2 initialPosition, double timestampMs)
     {
+        if (!IsFinite(initialPosition) || !double.IsFinite(timestampMs))
+        {
+            Clear();
+            return;
+        }
+
         position = initialPosition;
         velocity = Vector2.zero;
         p = 1.0f;
@@ -52,31 +71,60 @@ public sealed class KalmanFilter2D
         out Vector2 smoothPosition,
         out Vector2 smoothVelocity)
     {
-        if (!isInitialized || lastTimestampMs < 0.0)
+        if (!IsFinite(measurement) || !double.IsFinite(timestampMs))
         {
-            Reset(measurement, timestampMs);
-            smoothPosition = measurement;
+            smoothPosition = isInitialized ? position : Vector2.zero;
             smoothVelocity = Vector2.zero;
             return;
         }
 
-        float deltaTime = (float)((timestampMs - lastTimestampMs) / 1000.0);
-        lastTimestampMs = timestampMs;
-        if (deltaTime <= 0.001f)
+        if (!isInitialized || lastTimestampMs < 0.0)
         {
-            deltaTime = 0.016f;
+            Reset(measurement, timestampMs);
+            smoothPosition = position;
+            smoothVelocity = Vector2.zero;
+            return;
         }
 
-        Vector2 predictedPosition = position + velocity * deltaTime;
-        float predictedP = p + q;
-        float gain = predictedP / (predictedP + r);
-        Vector2 priorPosition = position;
+        double deltaMs = timestampMs - lastTimestampMs;
+        if (deltaMs <= 0.0)
+        {
+            smoothPosition = position;
+            smoothVelocity = Vector2.zero;
+            return;
+        }
 
-        position = predictedPosition + gain * (measurement - predictedPosition);
-        velocity = (position - priorPosition) / deltaTime;
-        p = (1.0f - gain) * predictedP;
+        float deltaTime = Mathf.Max((float)(deltaMs / 1000.0), 0.001f);
+        lastTimestampMs = timestampMs;
+
+        Vector3 pos3 = new Vector3(position.x, position.y, 0.0f);
+        Vector3 vel3 = new Vector3(velocity.x, velocity.y, 0.0f);
+        KalmanFilter3D.StepConstantVelocity(
+            ref pos3,
+            ref vel3,
+            ref p,
+            q,
+            r,
+            new Vector3(measurement.x, measurement.y, 0.0f),
+            deltaTime);
+
+        position = new Vector2(pos3.x, pos3.y);
+        velocity = new Vector2(vel3.x, vel3.y);
+
+        if (!IsFinite(position) || !IsFinite(velocity))
+        {
+            Clear();
+            smoothPosition = Vector2.zero;
+            smoothVelocity = Vector2.zero;
+            return;
+        }
 
         smoothPosition = position;
         smoothVelocity = velocity;
+    }
+
+    private static bool IsFinite(Vector2 value)
+    {
+        return float.IsFinite(value.x) && float.IsFinite(value.y);
     }
 }
