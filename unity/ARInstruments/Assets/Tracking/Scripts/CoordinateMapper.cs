@@ -14,6 +14,11 @@ public sealed class CoordinateMapper
     private Vector3 worldMin = new Vector3(-5.0f, -3.0f, 0.0f);
     private Vector3 worldMax = new Vector3(5.0f, 3.0f, 2.0f);
 
+    public Vector2 PixelMin => pixelMin;
+    public Vector2 PixelMax => pixelMax;
+    public double AreaMin => areaMin;
+    public double AreaMax => areaMax;
+
     public void SetupCamera(float width, float height, bool frontFacing)
     {
         cameraResolution = new Vector2(

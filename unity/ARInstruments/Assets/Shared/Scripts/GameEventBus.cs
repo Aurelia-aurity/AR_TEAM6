@@ -127,6 +127,7 @@ public static class GameEventBus
         OnTrackingLostAt = null;
         OnRawMalletSample = null;
         OnCalibrationCompleted = null;
+        OnCalibrationReset = null;
         OnValidHit = null;
     }
 
@@ -151,6 +152,14 @@ public static class GameEventBus
 
     // B -> A: calibrated screen pixel bounds and area bounds.
     public static Action<Vector2, Vector2, double, double> OnCalibrationCompleted;
+
+    // B -> A: reset tracker calibration back to its default pixel and area bounds.
+    public static Action OnCalibrationReset;
+
+    public static void PublishCalibrationReset()
+    {
+        OnCalibrationReset?.Invoke();
+    }
 
     // C -> presentation and audio: one valid hit.
     public static Action<HitEvent> OnValidHit;

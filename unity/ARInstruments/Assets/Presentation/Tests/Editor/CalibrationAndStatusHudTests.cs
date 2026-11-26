@@ -220,6 +220,28 @@ public sealed class CalibrationAndStatusHudTests
         ResetBus();
     }
 
+    [UnityTest]
+    public IEnumerator MainScene_CompletedCalibrationSwitchToUncalibratedCamera_ResetsUiAndTrackerDefaultBoundsOnFirstFrame()
+    {
+        ResetBus();
+        EditorSceneManager.OpenScene("Assets/Shared/Scenes/Main.unity");
+        yield return new EnterPlayMode();
+        yield return null;
+
+        try
+        {
+            AssertCompletedCalibrationResetsOnSwitchToUncalibratedCamera();
+        }
+        finally
+        {
+            GameEventBus.PublishSessionRunningChanged(false);
+            GameEventBus.PublishCameraDeviceSelected(string.Empty);
+        }
+
+        yield return new ExitPlayMode();
+        ResetBus();
+    }
+
     private static void AssertCameraSwitchRecoversSession()
     {
         var bar = Object.FindFirstObjectByType<ScreenControlBar>();
@@ -445,6 +467,178 @@ public sealed class CalibrationAndStatusHudTests
         Assert.That(bannerObj.activeSelf, Is.True);
         Assert.That(bannerText.text, Does.Contain("카메라 오류"));
         Assert.That(bannerText.text, Does.Contain("프레임"));
+    }
+
+    private static void AssertCompletedCalibrationResetsOnSwitchToUncalibratedCamera()
+    {
+        var calibrationManager = Object.FindFirstObjectByType<CalibrationManager>();
+        var adminPanel = Object.FindFirstObjectByType<MainAdminPanel>();
+        var hud = Object.FindFirstObjectByType<TrackingStatusHud>();
+        GameObject trackingSystem = GameObject.Find("TrackingSystem");
+        Assert.That(calibrationManager, Is.Not.Null);
+        Assert.That(adminPanel, Is.Not.Null);
+        Assert.That(hud, Is.Not.Null);
+        Assert.That(trackingSystem, Is.Not.Null);
+
+        Component tracker = trackingSystem.GetComponent("GpuMalletTracker");
+        Assert.That(tracker, Is.Not.Null);
+
+        adminPanel.SetVisible(true);
+        Text calibrationStatusLabel = adminPanel.transform
+            .Find("AdminPanelCanvas/AdminPanel/CalibrationStatus")?.GetComponent<Text>();
+        Text calibrationButtonLabel = adminPanel.transform
+            .Find("AdminPanelCanvas/AdminPanel/CalibrationButton/Label")?.GetComponent<Text>();
+        Assert.That(calibrationStatusLabel, Is.Not.Null);
+        Assert.That(calibrationButtonLabel, Is.Not.Null);
+
+        Vector2 defaultPixelMin = GetPropertyValue<Vector2>(tracker, "DefaultPixelMin");
+        Vector2 defaultPixelMax = GetPropertyValue<Vector2>(tracker, "DefaultPixelMax");
+        double defaultAreaMin = GetPropertyValue<double>(tracker, "DefaultAreaMin");
+        double defaultAreaMax = GetPropertyValue<double>(tracker, "DefaultAreaMax");
+        Assert.That(defaultPixelMin, Is.EqualTo(new Vector2(80f, 60f)));
+        Assert.That(defaultPixelMax, Is.EqualTo(new Vector2(1200f, 660f)));
+        Assert.That(defaultAreaMin, Is.EqualTo(100.0).Within(0.01));
+        Assert.That(defaultAreaMax, Is.EqualTo(3000.0).Within(0.01));
+
+        Texture2D frameTextureB = null;
+        Texture2D frameTextureA = null;
+        try
+        {
+            frameTextureB = new Texture2D(1280, 720, TextureFormat.RGBA32, false);
+            frameTextureA = new Texture2D(640, 480, TextureFormat.RGBA32, false);
+
+            // Step A: Complete all 5 calibration steps on virtual camera B.
+            double timeMs = 4000.0;
+            Guid sessionB = Guid.NewGuid();
+            PublishCameraState(sessionB, "Camera B", CameraInputState.Waiting, ref timeMs);
+            PublishCameraState(sessionB, "Camera B", CameraInputState.Streaming, ref timeMs);
+            PublishCameraFrame(sessionB, frameTextureB, 1, ref timeMs);
+
+            calibrationManager.Begin();
+            FeedBControlCalibrationSteps();
+            Assert.That(calibrationManager.CurrentStep, Is.EqualTo(CalibrationStep.Completed));
+            Assert.That(calibrationStatusLabel.text, Is.EqualTo("상태: 보정 완료"));
+            Assert.That(calibrationButtonLabel.text, Is.EqualTo("다시 보정"));
+
+            AssertTrackerCalibrationBounds(
+                tracker,
+                new Vector2(300f, 240f),
+                new Vector2(1100f, 620f),
+                400.0,
+                1300.0);
+
+            // Step B: Switch to uncalibrated camera A and verify UI resets to uncalibrated state.
+            PublishCameraState(sessionB, "Camera B", CameraInputState.Stopped, ref timeMs);
+            Guid sessionA = Guid.NewGuid();
+            PublishCameraState(sessionA, "Camera A", CameraInputState.Waiting, ref timeMs);
+            PublishCameraState(sessionA, "Camera A", CameraInputState.Streaming, ref timeMs);
+
+            Assert.That(calibrationManager.CurrentStep, Is.EqualTo(CalibrationStep.NotStarted));
+            Assert.That(calibrationManager.IsCalibrating, Is.False);
+            Assert.That(calibrationStatusLabel.text, Is.EqualTo("상태: 기본 보정 사용 중"));
+            Assert.That(calibrationButtonLabel.text, Is.EqualTo("보정 시작"));
+            Assert.That(hud.StatusBannerText, Is.Empty);
+
+            // Step C: Receive A's first frame and verify UI stays uncalibrated and tracker uses defaults.
+            PublishCameraFrame(sessionA, frameTextureA, 1, ref timeMs);
+            Assert.That(GetPropertyValue<bool>(tracker, "IsCameraCalibrationReady"), Is.True);
+            Assert.That(calibrationManager.CurrentStep, Is.EqualTo(CalibrationStep.NotStarted));
+            Assert.That(calibrationStatusLabel.text, Is.EqualTo("상태: 기본 보정 사용 중"));
+            Assert.That(calibrationButtonLabel.text, Is.EqualTo("보정 시작"));
+
+            AssertTrackerCalibrationBounds(
+                tracker,
+                defaultPixelMin,
+                defaultPixelMax,
+                defaultAreaMin,
+                defaultAreaMax);
+
+            Vector3 mappedMinCorner = InvokeMapPixelToWorld(tracker, defaultPixelMin, defaultAreaMin);
+            Assert.That(mappedMinCorner.x, Is.EqualTo(-0.85f).Within(0.001f));
+            Assert.That(mappedMinCorner.y, Is.EqualTo(0.48f).Within(0.001f));
+            Assert.That(mappedMinCorner.z, Is.EqualTo(1.05f).Within(0.001f));
+
+            // Step D: Switching via PublishCameraDeviceSelected after completing calibration also resets.
+            calibrationManager.Begin();
+            FeedBControlCalibrationSteps();
+            Assert.That(calibrationManager.CurrentStep, Is.EqualTo(CalibrationStep.Completed));
+            Assert.That(calibrationStatusLabel.text, Is.EqualTo("상태: 보정 완료"));
+
+            GameEventBus.PublishCameraDeviceSelected("Camera C");
+            Assert.That(calibrationManager.CurrentStep, Is.EqualTo(CalibrationStep.NotStarted));
+            Assert.That(calibrationStatusLabel.text, Is.EqualTo("상태: 기본 보정 사용 중"));
+            Assert.That(calibrationButtonLabel.text, Is.EqualTo("보정 시작"));
+            AssertTrackerCalibrationBounds(
+                tracker,
+                defaultPixelMin,
+                defaultPixelMax,
+                defaultAreaMin,
+                defaultAreaMax);
+        }
+        finally
+        {
+            if (frameTextureB != null)
+            {
+                Object.DestroyImmediate(frameTextureB);
+            }
+
+            if (frameTextureA != null)
+            {
+                Object.DestroyImmediate(frameTextureA);
+            }
+        }
+    }
+
+    private static void AssertTrackerCalibrationBounds(
+        Component tracker,
+        Vector2 expectedPixelMin,
+        Vector2 expectedPixelMax,
+        double expectedAreaMin,
+        double expectedAreaMax)
+    {
+        Assert.That(GetFieldValue<Vector2>(tracker, "pixelMin"), Is.EqualTo(expectedPixelMin));
+        Assert.That(GetFieldValue<Vector2>(tracker, "pixelMax"), Is.EqualTo(expectedPixelMax));
+        Assert.That(GetFieldValue<double>(tracker, "areaMin"), Is.EqualTo(expectedAreaMin).Within(0.01));
+        Assert.That(GetFieldValue<double>(tracker, "areaMax"), Is.EqualTo(expectedAreaMax).Within(0.01));
+
+        Assert.That(GetPropertyValue<Vector2>(tracker, "ActiveCalibrationPixelMin"), Is.EqualTo(expectedPixelMin));
+        Assert.That(GetPropertyValue<Vector2>(tracker, "ActiveCalibrationPixelMax"), Is.EqualTo(expectedPixelMax));
+        Assert.That(GetPropertyValue<double>(tracker, "ActiveCalibrationAreaMin"), Is.EqualTo(expectedAreaMin).Within(0.01));
+        Assert.That(GetPropertyValue<double>(tracker, "ActiveCalibrationAreaMax"), Is.EqualTo(expectedAreaMax).Within(0.01));
+    }
+
+    private static T GetFieldValue<T>(object target, string fieldName)
+    {
+        FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public);
+        Assert.That(field, Is.Not.Null, $"Field '{fieldName}' not found on {target.GetType().Name}.");
+        return (T)field.GetValue(target);
+    }
+
+    private static T GetPropertyValue<T>(object target, string propertyName)
+    {
+        PropertyInfo prop = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        Assert.That(prop, Is.Not.Null, $"Property '{propertyName}' not found on {target.GetType().Name}.");
+        return (T)prop.GetValue(target);
+    }
+
+    private static Vector3 InvokeMapPixelToWorld(object tracker, Vector2 pixelPosition, double pixelArea)
+    {
+        MethodInfo method = tracker.GetType().GetMethod("MapPixelToWorld", BindingFlags.Instance | BindingFlags.Public);
+        Assert.That(method, Is.Not.Null, $"Method 'MapPixelToWorld' not found on {tracker.GetType().Name}.");
+        return (Vector3)method.Invoke(tracker, new object[] { pixelPosition, pixelArea });
+    }
+
+    private static void PublishCameraFrame(Guid sessionId, Texture texture, long frameSequence, ref double receivedAtMs)
+    {
+        receivedAtMs += 10.0;
+        GameEventBus.PublishCameraFrame(new CameraFrameData
+        {
+            CameraId = "primary",
+            SessionId = sessionId,
+            FrameSequence = frameSequence,
+            Texture = texture,
+            ReceivedAtMs = receivedAtMs
+        });
     }
 
     private static void FeedBControlCalibrationSteps()

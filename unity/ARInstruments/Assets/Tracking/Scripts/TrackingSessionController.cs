@@ -30,6 +30,7 @@ public sealed class TrackingSessionController : MonoBehaviour
         if (tracker != null)
         {
             tracker.enabled = false;
+            tracker.EnsureDefaultCalibrationCaptured();
         }
     }
 
@@ -45,6 +46,9 @@ public sealed class TrackingSessionController : MonoBehaviour
         GameEventBus.OnRunSessionRequested += OnRunSessionRequested;
         GameEventBus.OnCameraInputStateChanged += OnCameraInputStateChanged;
         GameEventBus.OnCameraDeviceSelected += OnCameraDeviceSelected;
+        GameEventBus.OnCalibrationCompleted += OnCalibrationCompleted;
+        GameEventBus.OnCalibrationReset += OnCalibrationReset;
+        GameEventBus.OnCameraFrameReceived += OnCameraFrameReceived;
     }
 
     private void OnDisable()
@@ -52,6 +56,9 @@ public sealed class TrackingSessionController : MonoBehaviour
         GameEventBus.OnRunSessionRequested -= OnRunSessionRequested;
         GameEventBus.OnCameraInputStateChanged -= OnCameraInputStateChanged;
         GameEventBus.OnCameraDeviceSelected -= OnCameraDeviceSelected;
+        GameEventBus.OnCalibrationCompleted -= OnCalibrationCompleted;
+        GameEventBus.OnCalibrationReset -= OnCalibrationReset;
+        GameEventBus.OnCameraFrameReceived -= OnCameraFrameReceived;
         hasPendingRequest = false;
         waitingStreamRequestId = 0;
         hasCameraState = false;
@@ -88,6 +95,7 @@ public sealed class TrackingSessionController : MonoBehaviour
         }
 
         tracker.cameraDeviceName = nextDevice;
+        tracker.PrepareCalibrationForDevice(nextDevice, Guid.Empty);
         if (tracker.enabled)
         {
             var probe = CameraAvailabilityProbe ?? DefaultCameraProbe;
@@ -158,11 +166,73 @@ public sealed class TrackingSessionController : MonoBehaviour
         tracker.enabled = true;
     }
 
-    private void OnCameraInputStateChanged(CameraInputStateData state)
+    private void OnCalibrationCompleted(
+        Vector2 calibratedPixelMin,
+        Vector2 calibratedPixelMax,
+        double calibratedAreaMin,
+        double calibratedAreaMax)
     {
-        if (!TryAcceptCameraState(state))
+        if (tracker != null && !tracker.enabled)
+        {
+            tracker.ApplyCalibration(
+                calibratedPixelMin,
+                calibratedPixelMax,
+                calibratedAreaMin,
+                calibratedAreaMax);
+        }
+    }
+
+    private void OnCalibrationReset()
+    {
+        if (tracker != null && !tracker.enabled)
+        {
+            tracker.ResetCalibrationToDefaults();
+        }
+    }
+
+    private void OnCameraFrameReceived(CameraFrameData frame)
+    {
+        if (!isActiveAndEnabled
+            || tracker == null
+            || tracker.enabled
+            || !hasCameraState
+            || currentCameraState.State != CameraInputState.Streaming
+            || !string.Equals(frame.CameraId, TargetCameraId, StringComparison.Ordinal)
+            || frame.SessionId != currentCameraState.SessionId
+            || frame.Texture == null
+            || tracker.IsCameraCalibrationReady)
         {
             return;
+        }
+
+        tracker.InitializeCameraCalibrationForFrame(
+            frame.Texture.width,
+            frame.Texture.height,
+            false,
+            currentCameraState.DeviceName,
+            frame.SessionId);
+    }
+
+    private void OnCameraInputStateChanged(CameraInputStateData state)
+    {
+        if (!TryAcceptCameraState(state, out bool isNewSession))
+        {
+            return;
+        }
+
+        if (tracker != null && !tracker.enabled)
+        {
+            if (isNewSession
+                || state.State == CameraInputState.Stopped
+                || state.State == CameraInputState.Error)
+            {
+                tracker.InvalidateFrameCalibration();
+            }
+
+            if (state.State == CameraInputState.Waiting || state.State == CameraInputState.Streaming)
+            {
+                tracker.PrepareCalibrationForDevice(state.DeviceName, state.SessionId);
+            }
         }
 
         if (waitingStreamRequestId != 0)
@@ -200,8 +270,9 @@ public sealed class TrackingSessionController : MonoBehaviour
         }
     }
 
-    private bool TryAcceptCameraState(CameraInputStateData state)
+    private bool TryAcceptCameraState(CameraInputStateData state, out bool isNewSession)
     {
+        isNewSession = false;
         if (!isActiveAndEnabled
             || !string.Equals(state.CameraId, TargetCameraId, StringComparison.Ordinal)
             || state.State < CameraInputState.Waiting
@@ -213,6 +284,7 @@ public sealed class TrackingSessionController : MonoBehaviour
             return false;
         }
 
+        isNewSession = !hasCameraState || state.SessionId != currentCameraState.SessionId;
         if (hasCameraState
             && state.SessionId != Guid.Empty
             && currentCameraState.SessionId != Guid.Empty)
@@ -222,13 +294,12 @@ public sealed class TrackingSessionController : MonoBehaviour
                 return false;
             }
 
-            bool newSession = state.SessionId != currentCameraState.SessionId;
-            if (newSession && state.State != CameraInputState.Waiting)
+            if (isNewSession && state.State != CameraInputState.Waiting)
             {
                 return false;
             }
 
-            if (!newSession)
+            if (!isNewSession)
             {
                 if (state.State == CameraInputState.Waiting
                     && currentCameraState.State != CameraInputState.Waiting)

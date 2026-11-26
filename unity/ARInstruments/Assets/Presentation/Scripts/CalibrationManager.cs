@@ -201,10 +201,16 @@ public sealed class CalibrationManager : MonoBehaviour
         string nextDevice = deviceName ?? string.Empty;
         bool changed = !string.Equals(activeCameraDeviceName, nextDevice, StringComparison.Ordinal);
         activeCameraDeviceName = nextDevice;
-        if (IsCalibrating && changed)
+        if (changed && CurrentStep != CalibrationStep.NotStarted)
         {
-            Cancel();
+            InvalidateCalibrationForDeviceChange();
         }
+    }
+
+    private void InvalidateCalibrationForDeviceChange()
+    {
+        Cancel();
+        GameEventBus.PublishCalibrationReset();
     }
 
     private void OnCameraInputStateChanged(CameraInputStateData state)
@@ -265,7 +271,7 @@ public sealed class CalibrationManager : MonoBehaviour
             activeCameraDeviceName = incomingDevice;
         }
 
-        if (!IsCalibrating)
+        if (CurrentStep == CalibrationStep.NotStarted)
         {
             return;
         }
@@ -293,7 +299,7 @@ public sealed class CalibrationManager : MonoBehaviour
 
         if (deviceChanged)
         {
-            Cancel();
+            InvalidateCalibrationForDeviceChange();
             return;
         }
 

@@ -115,4 +115,22 @@ public sealed class PlaySessionContractTests
             GameEventBus.PublishCameraDeviceSelected(string.Empty);
         }
     }
+
+    [Test]
+    public void PublishCalibrationReset_NotifiesSubscribers()
+    {
+        int callCount = 0;
+        void OnReset() => callCount++;
+
+        GameEventBus.OnCalibrationReset += OnReset;
+        try
+        {
+            GameEventBus.PublishCalibrationReset();
+            Assert.That(callCount, Is.EqualTo(1));
+        }
+        finally
+        {
+            GameEventBus.OnCalibrationReset -= OnReset;
+        }
+    }
 }

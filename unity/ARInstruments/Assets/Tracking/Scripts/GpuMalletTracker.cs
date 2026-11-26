@@ -72,9 +72,77 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private long frameSequence;
     private double sessionStartMs;
     private double lastFrameReceivedMs;
+    private bool defaultCalibrationCaptured;
+    private Vector2 defaultPixelMin;
+    private Vector2 defaultPixelMax;
+    private double defaultAreaMin;
+    private double defaultAreaMax;
+    private bool hasCustomCalibration;
+    private string activeCalibrationDeviceName = string.Empty;
+    private Guid activeCalibrationSessionId;
+
+    public Vector2 DefaultPixelMin
+    {
+        get
+        {
+            EnsureDefaultCalibrationCaptured();
+            return defaultPixelMin;
+        }
+    }
+
+    public Vector2 DefaultPixelMax
+    {
+        get
+        {
+            EnsureDefaultCalibrationCaptured();
+            return defaultPixelMax;
+        }
+    }
+
+    public double DefaultAreaMin
+    {
+        get
+        {
+            EnsureDefaultCalibrationCaptured();
+            return defaultAreaMin;
+        }
+    }
+
+    public double DefaultAreaMax
+    {
+        get
+        {
+            EnsureDefaultCalibrationCaptured();
+            return defaultAreaMax;
+        }
+    }
+
+    public Vector2 ActiveCalibrationPixelMin => coordinateMapper.PixelMin;
+    public Vector2 ActiveCalibrationPixelMax => coordinateMapper.PixelMax;
+    public double ActiveCalibrationAreaMin => coordinateMapper.AreaMin;
+    public double ActiveCalibrationAreaMax => coordinateMapper.AreaMax;
+    public bool IsCameraCalibrationReady => cameraCalibrationReady;
+
+    public Vector3 MapPixelToWorld(Vector2 pixelPosition, double pixelArea) =>
+        coordinateMapper.MapToWorld(pixelPosition, pixelArea);
+
+    public void EnsureDefaultCalibrationCaptured()
+    {
+        if (defaultCalibrationCaptured)
+        {
+            return;
+        }
+
+        defaultPixelMin = pixelMin;
+        defaultPixelMax = pixelMax;
+        defaultAreaMin = areaMin;
+        defaultAreaMax = areaMax;
+        defaultCalibrationCaptured = true;
+    }
 
     private void Awake()
     {
+        EnsureDefaultCalibrationCaptured();
         onReadbackSlot0 = OnReadbackSlot0;
         onReadbackSlot1 = OnReadbackSlot1;
         onReadbackSlot2 = OnReadbackSlot2;
@@ -82,7 +150,9 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
     private void OnEnable()
     {
+        EnsureDefaultCalibrationCaptured();
         GameEventBus.OnCalibrationCompleted += ApplyCalibration;
+        GameEventBus.OnCalibrationReset += ResetCalibrationToDefaults;
         shuttingDown = false;
         cameraCalibrationReady = false;
         cameraStreamingPublished = false;
@@ -148,6 +218,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
         }
 
         Debug.Log($"GpuMalletTracker selected camera: '{selectedDevice.name}'.", this);
+        PrepareCalibrationForDevice(selectedDevice.name, sessionId);
         frontFacingCamera = selectedDevice.isFrontFacing;
         webCam = new WebCamTexture(selectedDevice.name, 1280, 720, 60);
         webCam.Play();
@@ -256,18 +327,12 @@ public sealed class GpuMalletTracker : MonoBehaviour
 
         if (!cameraCalibrationReady)
         {
-            coordinateMapper.SetupCamera(
+            InitializeCameraCalibrationForFrame(
                 webCam.width,
                 webCam.height,
-                frontFacingCamera);
-            coordinateMapper.UpdateCalibration(
-                pixelMin,
-                pixelMax,
-                areaMin,
-                areaMax,
-                worldMin,
-                worldMax);
-            cameraCalibrationReady = true;
+                frontFacingCamera,
+                webCam.deviceName,
+                sessionId);
         }
 
         if (!cameraStreamingPublished)
@@ -507,6 +572,7 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private void OnDisable()
     {
         GameEventBus.OnCalibrationCompleted -= ApplyCalibration;
+        GameEventBus.OnCalibrationReset -= ResetCalibrationToDefaults;
         ReleaseResources();
     }
 
@@ -580,10 +646,14 @@ public sealed class GpuMalletTracker : MonoBehaviour
         double calibratedAreaMin,
         double calibratedAreaMax)
     {
+        EnsureDefaultCalibrationCaptured();
         pixelMin = calibratedPixelMin;
         pixelMax = calibratedPixelMax;
         areaMin = calibratedAreaMin;
         areaMax = calibratedAreaMax;
+        hasCustomCalibration = true;
+        activeCalibrationDeviceName = ResolveCurrentDeviceName();
+        activeCalibrationSessionId = ResolveCurrentSessionId();
         if (cameraCalibrationReady)
         {
             coordinateMapper.UpdateCalibration(
@@ -594,5 +664,116 @@ public sealed class GpuMalletTracker : MonoBehaviour
                 worldMin,
                 worldMax);
         }
+    }
+
+    public void ResetCalibrationToDefaults()
+    {
+        EnsureDefaultCalibrationCaptured();
+        pixelMin = defaultPixelMin;
+        pixelMax = defaultPixelMax;
+        areaMin = defaultAreaMin;
+        areaMax = defaultAreaMax;
+        hasCustomCalibration = false;
+        activeCalibrationDeviceName = string.Empty;
+        activeCalibrationSessionId = Guid.Empty;
+        if (cameraCalibrationReady)
+        {
+            coordinateMapper.UpdateCalibration(
+                pixelMin,
+                pixelMax,
+                areaMin,
+                areaMax,
+                worldMin,
+                worldMax);
+        }
+    }
+
+    public void PrepareCalibrationForDevice(string deviceName, Guid cameraSessionId)
+    {
+        EnsureDefaultCalibrationCaptured();
+        if (!hasCustomCalibration)
+        {
+            return;
+        }
+
+        string incomingDevice = deviceName ?? string.Empty;
+        bool deviceChanged = false;
+        if (!string.IsNullOrEmpty(incomingDevice) && !string.IsNullOrEmpty(activeCalibrationDeviceName))
+        {
+            deviceChanged = !string.Equals(activeCalibrationDeviceName, incomingDevice, StringComparison.Ordinal);
+        }
+        else if (cameraSessionId != Guid.Empty && activeCalibrationSessionId != Guid.Empty)
+        {
+            deviceChanged = cameraSessionId != activeCalibrationSessionId;
+        }
+
+        if (deviceChanged)
+        {
+            ResetCalibrationToDefaults();
+        }
+    }
+
+    public void InvalidateFrameCalibration()
+    {
+        cameraCalibrationReady = false;
+    }
+
+    public void InitializeCameraCalibrationForFrame(
+        int width,
+        int height,
+        bool frontFacing,
+        string deviceName,
+        Guid cameraSessionId)
+    {
+        EnsureDefaultCalibrationCaptured();
+        PrepareCalibrationForDevice(deviceName, cameraSessionId);
+        coordinateMapper.SetupCamera(width, height, frontFacing);
+        coordinateMapper.UpdateCalibration(
+            pixelMin,
+            pixelMax,
+            areaMin,
+            areaMax,
+            worldMin,
+            worldMax);
+        cameraCalibrationReady = true;
+    }
+
+    private string ResolveCurrentDeviceName()
+    {
+        if (webCam != null && !string.IsNullOrEmpty(webCam.deviceName))
+        {
+            return webCam.deviceName;
+        }
+
+        string logicalId = string.IsNullOrEmpty(cameraId) ? "primary" : cameraId;
+        if (GameEventBus.TryGetCameraInputState(logicalId, out CameraInputStateData cached)
+            && !string.IsNullOrEmpty(cached.DeviceName))
+        {
+            return cached.DeviceName;
+        }
+
+        if (!string.IsNullOrEmpty(cameraDeviceName))
+        {
+            return cameraDeviceName;
+        }
+
+        return GameEventBus.SelectedCameraDeviceName ?? string.Empty;
+    }
+
+    private Guid ResolveCurrentSessionId()
+    {
+        if (sessionId != Guid.Empty)
+        {
+            return sessionId;
+        }
+
+        string logicalId = string.IsNullOrEmpty(cameraId) ? "primary" : cameraId;
+        if (GameEventBus.TryGetCameraInputState(logicalId, out CameraInputStateData cached)
+            && cached.SessionId != Guid.Empty)
+        {
+            return cached.SessionId;
+        }
+
+        return Guid.Empty;
     }
 }
