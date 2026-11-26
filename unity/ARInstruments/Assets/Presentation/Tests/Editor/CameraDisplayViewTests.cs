@@ -304,27 +304,48 @@ public sealed class CameraDisplayPreviewPlayTests
         CameraDisplayView view = Object.FindFirstObjectByType<CameraDisplayView>();
         ScreenControlBar controlBar = Object.FindFirstObjectByType<ScreenControlBar>();
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
-        Toggle toggle = view.GetComponentInChildren<Toggle>(true);
-        GameObject footer = view.transform.Find("Footer").gameObject;
+        Toggle mirrorToggle = view.transform.Find("Footer/MirrorToggle").GetComponent<Toggle>();
+        Toggle cursorToggle = view.transform.Find("Footer/CursorDebugToggle").GetComponent<Toggle>();
+        GameObject statusIndicator = view.transform.Find("Footer/StatusIndicator").gameObject;
+        GameObject statusText = view.transform.Find("Footer/StatusText").gameObject;
+        GameObject statusDetail = view.transform.Find("Footer/StatusDetail").gameObject;
         Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
         Assert.That(view.IsAdminMode, Is.False);
-        Assert.That(footer.activeSelf, Is.False);
-        Assert.That(toggle.interactable, Is.False);
-        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: false);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True, "FR-002 mirror toggle must stay visible in User mode.");
+        Assert.That(mirrorToggle.interactable, Is.True, "FR-002 mirror toggle must remain operable in User mode.");
+        Assert.That(cursorToggle.gameObject.activeInHierarchy, Is.False);
+        Assert.That(cursorToggle.interactable, Is.False);
+        Assert.That(statusIndicator.activeInHierarchy, Is.False);
+        Assert.That(statusText.activeInHierarchy, Is.False);
+        Assert.That(statusDetail.activeInHierarchy, Is.False);
+        AssertNoBottomUiOverlap(view, controlBar, expectAdminDiagnosticsVisible: false);
+
+        ClickToggleLabel(view, "MirrorToggle");
+        yield return null;
+        Assert.That(view.MirrorEnabled, Is.True, "User mode must be able to toggle mirror mode.");
+        Assert.That(mirrorToggle.isOn, Is.True);
+        ClickToggleLabel(view, "MirrorToggle");
+        yield return null;
+        Assert.That(view.MirrorEnabled, Is.False);
 
         ClickModeButton(controlBar);
         yield return null;
         Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.Administrator));
         Assert.That(view.IsAdminMode, Is.True);
-        Assert.That(footer.activeSelf, Is.True);
-        Assert.That(toggle.interactable, Is.True);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(mirrorToggle.interactable, Is.True);
+        Assert.That(cursorToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(cursorToggle.interactable, Is.True);
+        Assert.That(statusIndicator.activeInHierarchy, Is.True);
+        Assert.That(statusText.activeInHierarchy, Is.True);
+        Assert.That(statusDetail.activeInHierarchy, Is.True);
         Assert.That(view.MirrorEnabled, Is.False);
-        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: true);
+        AssertNoBottomUiOverlap(view, controlBar, expectAdminDiagnosticsVisible: true);
         CaptureState(view, "streaming");
         ClickToggleLabel(view, "MirrorToggle");
         yield return null;
         Assert.That(view.MirrorEnabled, Is.True);
-        Assert.That(toggle.isOn, Is.True);
+        Assert.That(mirrorToggle.isOn, Is.True);
         CaptureState(view, "mirror-on");
         ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.False);
@@ -347,7 +368,7 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Waiting));
-        Assert.That(toggle.isOn, Is.True);
+        Assert.That(mirrorToggle.isOn, Is.True);
         CaptureState(view, "waiting");
 
         settings.Update();
@@ -360,13 +381,13 @@ public sealed class CameraDisplayPreviewPlayTests
         view.enabled = false;
         yield return null;
         Assert.That(view.GetComponentInChildren<RawImage>(true).texture, Is.Null);
-        Assert.That(toggle.interactable, Is.False);
+        Assert.That(mirrorToggle.interactable, Is.False);
         view.enabled = true;
         yield return null;
         yield return null;
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
-        Assert.That(toggle.interactable, Is.True);
-        Assert.That(toggle.isOn, Is.True);
+        Assert.That(mirrorToggle.interactable, Is.True);
+        Assert.That(mirrorToggle.isOn, Is.True);
         ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.False);
         ClickToggleLabel(view, "MirrorToggle");
@@ -374,9 +395,13 @@ public sealed class CameraDisplayPreviewPlayTests
         ClickModeButton(controlBar);
         yield return null;
         Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
-        Assert.That(footer.activeSelf, Is.False);
-        Assert.That(toggle.interactable, Is.False);
-        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: false);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(mirrorToggle.interactable, Is.True);
+        Assert.That(cursorToggle.gameObject.activeInHierarchy, Is.False);
+        Assert.That(statusIndicator.activeInHierarchy, Is.False);
+        Assert.That(statusText.activeInHierarchy, Is.False);
+        Assert.That(statusDetail.activeInHierarchy, Is.False);
+        AssertNoBottomUiOverlap(view, controlBar, expectAdminDiagnosticsVisible: false);
         yield return new ExitPlayMode();
     }
 
@@ -398,30 +423,40 @@ public sealed class CameraDisplayPreviewPlayTests
             Is.Not.Null);
     }
 
-    internal static void AssertNoBottomUiOverlap(CameraDisplayView view, ScreenControlBar bar, bool expectFooterVisible)
+    internal static void AssertNoBottomUiOverlap(CameraDisplayView view, ScreenControlBar bar, bool expectAdminDiagnosticsVisible)
     {
         Canvas.ForceUpdateCanvases();
         RectTransform bottomBar = bar.transform.Find("ScreenControls/SafeArea/BottomBar") as RectTransform;
         RectTransform status = bar.transform.Find("ScreenControls/SafeArea/Status") as RectTransform;
         RectTransform previewFrame = view.transform.Find("PreviewFrame") as RectTransform;
         RectTransform footer = view.transform.Find("Footer") as RectTransform;
+        RectTransform mirrorToggle = footer != null ? footer.Find("MirrorToggle") as RectTransform : null;
 
         Assert.That(bottomBar, Is.Not.Null);
         Assert.That(status, Is.Not.Null);
         Assert.That(previewFrame, Is.Not.Null);
         Assert.That(footer, Is.Not.Null);
-        Assert.That(footer.gameObject.activeInHierarchy, Is.EqualTo(expectFooterVisible));
+        Assert.That(mirrorToggle, Is.Not.Null);
+        Assert.That(footer.gameObject.activeInHierarchy, Is.True);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True);
 
         Rect bottomBarRect = GetScreenRect(bottomBar);
         Rect statusRect = GetScreenRect(status);
         Rect previewRect = GetScreenRect(previewFrame);
+        Rect mirrorRect = GetScreenRect(mirrorToggle);
 
         Assert.That(bottomBarRect.yMax, Is.LessThanOrEqualTo(statusRect.yMin + 0.01f),
             "ScreenControlBar BottomBar must not overlap Status.");
         Assert.That(statusRect.yMax, Is.LessThanOrEqualTo(previewRect.yMin + 0.01f),
             "ScreenControlBar Status must not overlap PreviewFrame.");
+        Assert.That(bottomBarRect.yMax, Is.LessThanOrEqualTo(mirrorRect.yMin + 0.01f),
+            "MirrorToggle must sit completely above ScreenControlBar BottomBar.");
+        Assert.That(statusRect.yMax, Is.LessThanOrEqualTo(mirrorRect.yMin + 0.01f),
+            "MirrorToggle must sit completely above ScreenControlBar Status.");
+        Assert.That(mirrorRect.yMax, Is.LessThanOrEqualTo(previewRect.yMin + 0.01f),
+            "MirrorToggle must not overlap PreviewFrame.");
 
-        if (!expectFooterVisible)
+        if (!expectAdminDiagnosticsVisible)
             return;
 
         Rect footerRect = GetScreenRect(footer);
@@ -432,11 +467,9 @@ public sealed class CameraDisplayPreviewPlayTests
         Assert.That(footerRect.yMax, Is.LessThanOrEqualTo(previewRect.yMin + 0.01f),
             "Footer must not overlap PreviewFrame.");
 
-        RectTransform mirrorToggle = footer.Find("MirrorToggle") as RectTransform;
         RectTransform cursorToggle = footer.Find("CursorDebugToggle") as RectTransform;
         RectTransform statusText = footer.Find("StatusText") as RectTransform;
         RectTransform statusDetail = footer.Find("StatusDetail") as RectTransform;
-        Rect mirrorRect = GetScreenRect(mirrorToggle);
         Rect cursorRect = GetScreenRect(cursorToggle);
         Rect statusTextRect = GetScreenRect(statusText);
         Rect statusDetailRect = GetScreenRect(statusDetail);

@@ -156,7 +156,7 @@ public sealed class HitDetectionCore : IDisposable
         }
 
         MalletHitState mallet = GetMalletState(state.MalletId);
-        if (mallet == null || !IsFiniteSample(state))
+        if (mallet == null || !IsFinite(state.TimestampMs) || !IsFinite(state.Confidence))
         {
             return;
         }
@@ -177,6 +177,11 @@ public sealed class HitDetectionCore : IDisposable
             // 추적이 재개되면 새 이동 구간부터 판정한다.
             mallet.AcceptTimestamp(state.TimestampMs);
             mallet.PreviousSample = null;
+            return;
+        }
+
+        if (!IsFinite(state.Position) || !IsFinite(state.Velocity))
+        {
             return;
         }
 
@@ -446,14 +451,6 @@ public sealed class HitDetectionCore : IDisposable
         // Strict > on innerRadius prevents overlap with a Circle pad sharing OuterRadius == innerRadius.
         double innerSq = (double)innerRadius * innerRadius;
         return innerRadius <= 0f || distSq > innerSq;
-    }
-
-    private static bool IsFiniteSample(in MalletState state)
-    {
-        return IsFinite(state.TimestampMs)
-            && IsFinite(state.Confidence)
-            && IsFinite(state.Position)
-            && IsFinite(state.Velocity);
     }
 
     private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);

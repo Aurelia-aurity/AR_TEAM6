@@ -132,7 +132,11 @@ public sealed class KalmanFilter3D
         float gain = predictedP / (predictedP + r);
         Vector3 priorPosition = position;
 
-        position = predictedPosition + gain * (measurement - predictedPosition);
+        Vector3 filtered = predictedPosition + gain * (measurement - predictedPosition);
+        position = new Vector3(
+            Mathf.Clamp(filtered.x, Mathf.Min(priorPosition.x, measurement.x), Mathf.Max(priorPosition.x, measurement.x)),
+            Mathf.Clamp(filtered.y, Mathf.Min(priorPosition.y, measurement.y), Mathf.Max(priorPosition.y, measurement.y)),
+            Mathf.Clamp(filtered.z, Mathf.Min(priorPosition.z, measurement.z), Mathf.Max(priorPosition.z, measurement.z)));
         velocity = (position - priorPosition) / deltaTime;
         p = (1.0f - gain) * predictedP;
     }

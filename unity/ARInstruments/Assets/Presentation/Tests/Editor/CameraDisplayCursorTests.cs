@@ -22,11 +22,14 @@ public sealed class CameraDisplayCursorTests
         RectTransform left = FindCursor(display, "LeftCursor");
         RectTransform right = FindCursor(display, "RightCursor");
         Toggle debugToggle = display.transform.Find("Footer/CursorDebugToggle").GetComponent<Toggle>();
+        Toggle mirrorToggle = display.transform.Find("Footer/MirrorToggle").GetComponent<Toggle>();
         Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
         Assert.That(cursors.IsAdminMode, Is.False);
         Assert.That(cursors.DebugCursorsEnabled, Is.False);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.False);
         Assert.That(debugToggle.interactable, Is.False);
-        Assert.That(display.transform.Find("Footer").gameObject.activeSelf, Is.False);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(mirrorToggle.interactable, Is.True);
         Publish(cursors.ProjectionCamera);
         yield return null;
         yield return null;
@@ -46,8 +49,8 @@ public sealed class CameraDisplayCursorTests
         yield return null;
         Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.Administrator));
         Assert.That(cursors.IsAdminMode, Is.True);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.True);
         Assert.That(debugToggle.interactable, Is.True);
-        Assert.That(display.transform.Find("Footer").gameObject.activeSelf, Is.True);
 
         CameraDisplayPreviewPlayTests.ClickToggleLabel(display, "CursorDebugToggle");
         yield return null;
@@ -247,8 +250,9 @@ public sealed class CameraDisplayCursorTests
         Assert.That(cursors.IsAdminMode, Is.False);
         Assert.That(left.gameObject.activeSelf, Is.False);
         Assert.That(right.gameObject.activeSelf, Is.False);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.False);
         Assert.That(debugToggle.interactable, Is.False);
-        Assert.That(display.transform.Find("Footer").gameObject.activeSelf, Is.False);
+        Assert.That(display.transform.Find("Footer/MirrorToggle").GetComponent<Toggle>().interactable, Is.True);
 
         // Tracking events arriving while in User mode must never show cursors.
         Publish(projection);

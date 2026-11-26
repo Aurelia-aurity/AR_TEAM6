@@ -117,10 +117,20 @@ public sealed class CameraDisplayView : MonoBehaviour
     private void ApplyAdminMode()
     {
         GameObject footer = ResolveFooterRoot();
-        if (footer != null && footer.activeSelf != adminMode)
-            footer.SetActive(adminMode);
+        if (footer != null && !footer.activeSelf)
+            footer.SetActive(true);
+        if (statusIndicator != null && statusIndicator.gameObject.activeSelf != adminMode)
+            statusIndicator.gameObject.SetActive(adminMode);
+        if (statusText != null && statusText.gameObject.activeSelf != adminMode)
+            statusText.gameObject.SetActive(adminMode);
+        if (statusDetail != null && statusDetail.gameObject.activeSelf != adminMode)
+            statusDetail.gameObject.SetActive(adminMode);
         if (mirrorToggle != null)
-            mirrorToggle.interactable = isActiveAndEnabled && adminMode;
+        {
+            if (!mirrorToggle.gameObject.activeSelf)
+                mirrorToggle.gameObject.SetActive(true);
+            mirrorToggle.interactable = isActiveAndEnabled;
+        }
     }
 
     private GameObject ResolveFooterRoot()

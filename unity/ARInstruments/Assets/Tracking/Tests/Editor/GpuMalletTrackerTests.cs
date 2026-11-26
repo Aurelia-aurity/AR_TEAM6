@@ -129,4 +129,85 @@ public sealed class GpuMalletTrackerTests
         Assert.That(state.State, Is.EqualTo(CameraInputState.Error));
         Assert.That(state.Error, Is.EqualTo(CameraInputError.StartFailed));
     }
+
+    [Test]
+    public void StopInFrontOfStrikePlaneDoesNotOvershootToNegativeZ()
+    {
+        // With areaMin=200, areaMax=2000 and worldZ in [0, 2], z=0.40 => area 560, z=0.06 => area 254.
+        uint area040 = 560u;
+        uint area006 = 254u;
+
+        MalletState s0 = tracker.ProcessLeftSampleForTesting(640u * area040, 360u * area040, area040, 0.0);
+        MalletState s1 = tracker.ProcessLeftSampleForTesting(640u * area006, 360u * area006, area006, 33.0);
+        MalletState s2 = tracker.ProcessLeftSampleForTesting(640u * area006, 360u * area006, area006, 66.0);
+
+        Assert.That(s0.Position.z, Is.EqualTo(0.40f).Within(0.001f));
+        Assert.That(s1.Position.z, Is.GreaterThanOrEqualTo(0.06f));
+        Assert.That(s2.Position.z, Is.GreaterThanOrEqualTo(0.06f),
+            "Predicted momentum must not push a mallet stopped at +0.06m across Z=0.");
+    }
+
+    [TestCase(90, true, 360u, 640u)]
+    [TestCase(90, false, 640u, 360u)]
+    [TestCase(270, true, 360u, 640u)]
+    [TestCase(270, false, 640u, 360u)]
+    public void DefaultCalibrationAfter90Or270RotationMapsCenterToWorldOrigin(
+        int rotationDegrees,
+        bool preOrientedPixels,
+        uint centerX,
+        uint centerY)
+    {
+        tracker.pixelMin = new Vector2(200.0f, 200.0f);
+        tracker.pixelMax = new Vector2(1080.0f, 520.0f);
+        tracker.ConfigureMapperForTesting(
+            1280.0f,
+            720.0f,
+            frontFacing: false,
+            rotationDegrees: rotationDegrees,
+            verticalMirror: false,
+            preOrientedPixels: preOrientedPixels);
+
+        uint area = 1100u;
+        MalletState state = tracker.ProcessLeftSampleForTesting(centerX * area, centerY * area, area, 100.0);
+
+        Assert.That(state.Confidence, Is.GreaterThan(0.0f));
+        Assert.That(state.Position.x, Is.EqualTo(0.0f).Within(0.01f));
+        Assert.That(state.Position.y, Is.EqualTo(0.0f).Within(0.01f));
+    }
+
+    [Test]
+    public void OrientationChangeAfterCalibrationWithholdsTrackingUntilRecalibrated()
+    {
+        int rawSampleCount = 0;
+        int lostCount = 0;
+        GameEventBus.OnRawMalletSample += _ => rawSampleCount++;
+        GameEventBus.OnTrackingLostAt += (_, __) => lostCount++;
+
+        tracker.ConfigureMapperForTesting(1280.0f, 720.0f, frontFacing: false, rotationDegrees: 0);
+        tracker.ApplyCalibration(new Vector2(200.0f, 200.0f), new Vector2(1080.0f, 520.0f), 200.0, 2000.0);
+        Assert.That(tracker.IsRecalibrationRequired, Is.False);
+
+        uint area = 1100u;
+        MalletState beforeRotate = tracker.ProcessLeftSampleForTesting(640u * area, 360u * area, area, 100.0);
+        Assert.That(beforeRotate.Confidence, Is.GreaterThan(0.0f));
+        Assert.That(lostCount, Is.EqualTo(0));
+
+        // Rotating after calibration invalidates prior bounds and withholds tracking/hits until recalibrated.
+        tracker.ConfigureMapperForTesting(1280.0f, 720.0f, frontFacing: false, rotationDegrees: 90, preOrientedPixels: true);
+        Assert.That(tracker.IsRecalibrationRequired, Is.True);
+
+        MalletState whileInvalid = tracker.ProcessLeftSampleForTesting(360u * area, 640u * area, area, 133.0);
+        Assert.That(whileInvalid.Confidence, Is.EqualTo(0.0f));
+        Assert.That(lostCount, Is.EqualTo(1));
+        Assert.That(rawSampleCount, Is.EqualTo(2), "Raw samples must continue firing so recalibration can complete.");
+
+        // Completing calibration for the new 720x1280 oriented space resumes valid tracking.
+        tracker.ApplyCalibration(new Vector2(100.0f, 200.0f), new Vector2(620.0f, 1080.0f), 200.0, 2000.0);
+        Assert.That(tracker.IsRecalibrationRequired, Is.False);
+
+        MalletState afterRecalib = tracker.ProcessLeftSampleForTesting(360u * area, 640u * area, area, 166.0);
+        Assert.That(afterRecalib.Confidence, Is.GreaterThan(0.0f));
+        Assert.That(afterRecalib.Position.x, Is.EqualTo(0.0f).Within(0.01f));
+        Assert.That(afterRecalib.Position.y, Is.EqualTo(0.0f).Within(0.01f));
+    }
 }

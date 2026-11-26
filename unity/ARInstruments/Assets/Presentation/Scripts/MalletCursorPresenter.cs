@@ -254,8 +254,11 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void UpdateDebugToggleInteractable()
     {
-        if (debugToggle != null)
-            debugToggle.interactable = isActiveAndEnabled && adminMode;
+        if (debugToggle == null)
+            return;
+        if (debugToggle.gameObject.activeSelf != adminMode)
+            debugToggle.gameObject.SetActive(adminMode);
+        debugToggle.interactable = isActiveAndEnabled && adminMode;
     }
 
     private static void SetVisible(RectTransform cursor, bool value)

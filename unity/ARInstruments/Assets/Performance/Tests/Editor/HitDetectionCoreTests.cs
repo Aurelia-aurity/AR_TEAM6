@@ -103,6 +103,43 @@ public sealed class HitDetectionCoreTests
     }
 
     [Test]
+    public void TrackingLossWithNaNPosition_BreaksHistoryAndPreventsFalseHitAcrossGap()
+    {
+        Sample(0.4f, 0);
+        core.ProcessMalletState(new MalletState
+        {
+            MalletId = 0,
+            Position = new Vector3(float.NaN, float.NaN, float.NaN),
+            Velocity = new Vector3(float.NaN, float.NaN, float.NaN),
+            Confidence = 0f,
+            TimestampMs = 33
+        });
+        Sample(-0.05f, 66);
+        Assert.That(hits, Is.Empty, "Confidence=0 with NaN position must sever movement history.");
+
+        // Stale older Confidence=0 with NaN position must not erase newer valid sample.
+        Sample(0.4f, 100);
+        core.ProcessMalletState(new MalletState
+        {
+            MalletId = 0,
+            Position = new Vector3(float.NaN, 0f, 0f),
+            Confidence = 0f,
+            TimestampMs = 90
+        });
+        Sample(-0.05f, 133);
+        Assert.That(hits, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void MalletStoppingInFrontOfSurface_DoesNotTriggerHit()
+    {
+        Sample(0.40f, 0);
+        Sample(0.1697f, 33);
+        Sample(0.06f, 66);
+        Assert.That(hits, Is.Empty);
+    }
+
+    [Test]
     public void CrossingRequiresTwoActiveSamplesAndPreservesTheirVersion()
     {
         try

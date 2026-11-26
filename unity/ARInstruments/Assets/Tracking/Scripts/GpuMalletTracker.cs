@@ -47,6 +47,9 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private const int ResultCount = 6;
     private const int ThreadsPerGroup = 8;
     private const int ReadbackSlotCount = 3;
+    private static readonly Vector2 DefaultCalibrationReferenceSize = new Vector2(1280.0f, 720.0f);
+    private static readonly Vector2 DefaultInspectorPixelMin = new Vector2(200.0f, 200.0f);
+    private static readonly Vector2 DefaultInspectorPixelMax = new Vector2(1080.0f, 520.0f);
 
     private WebCamTexture webCam;
     private readonly ComputeBuffer[] resultBuffers = new ComputeBuffer[ReadbackSlotCount];
@@ -70,6 +73,15 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private bool cameraCalibrationReady;
     private int configuredWidth;
     private int configuredHeight;
+    private int configuredRotation;
+    private bool configuredVerticallyMirrored;
+    private bool hasCustomCalibration;
+    private bool hasCalibrationFrameSpec;
+    private int calibratedOrientedWidth;
+    private int calibratedOrientedHeight;
+    private int calibratedRotation;
+    private bool calibratedVerticallyMirrored;
+    private bool recalibrationRequired;
     private bool frontFacingCamera;
     private bool cameraStreamingPublished;
     private bool terminalStatePublished;
@@ -77,6 +89,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private Guid sessionId;
     private double sessionStartMs;
     private double lastFrameReceivedMs;
+
+    public bool IsRecalibrationRequired => recalibrationRequired;
 
     private void Awake()
     {
@@ -91,6 +105,11 @@ public sealed class GpuMalletTracker : MonoBehaviour
         cameraCalibrationReady = false;
         configuredWidth = 0;
         configuredHeight = 0;
+        configuredRotation = 0;
+        configuredVerticallyMirrored = false;
+        hasCustomCalibration = false;
+        hasCalibrationFrameSpec = false;
+        recalibrationRequired = false;
         cameraStreamingPublished = false;
         terminalStatePublished = false;
         frameSequence = 0;
@@ -283,25 +302,19 @@ public sealed class GpuMalletTracker : MonoBehaviour
         int orientedWidth = swapsAxes ? webCam.height : webCam.width;
         int orientedHeight = swapsAxes ? webCam.width : webCam.height;
 
-        if (!cameraCalibrationReady || configuredWidth != orientedWidth || configuredHeight != orientedHeight)
+        if (!cameraCalibrationReady
+            || configuredWidth != orientedWidth
+            || configuredHeight != orientedHeight
+            || configuredRotation != clockwiseRotation
+            || configuredVerticallyMirrored != verticallyMirrored)
         {
-            // MalletTracker.compute already applies VerticallyMirrored then ClockwiseRotation.
-            coordinateMapper.SetupCamera(
-                orientedWidth,
-                orientedHeight,
+            ConfigureCameraCalibration(
+                webCam.width,
+                webCam.height,
                 frontFacingCamera,
-                0,
-                false);
-            coordinateMapper.UpdateCalibration(
-                pixelMin,
-                pixelMax,
-                areaMin,
-                areaMax,
-                worldMin,
-                worldMax);
-            configuredWidth = orientedWidth;
-            configuredHeight = orientedHeight;
-            cameraCalibrationReady = true;
+                clockwiseRotation,
+                verticallyMirrored,
+                preOrientedPixels: true);
         }
 
         if (!cameraStreamingPublished)
@@ -479,6 +492,13 @@ public sealed class GpuMalletTracker : MonoBehaviour
             TimestampMs = timestampMs
         });
 
+        if (recalibrationRequired)
+        {
+            filter.Clear();
+            GameEventBus.PublishTrackingLost(malletId, timestampMs);
+            return TrackingLostState(malletId, timestampMs);
+        }
+
         if (!coordinateMapper.TryMapToWorld(centroid, pixelCount, out Vector3 rawWorldPosition))
         {
             filter.Clear();
@@ -533,13 +553,125 @@ public sealed class GpuMalletTracker : MonoBehaviour
         float height,
         bool frontFacing,
         int rotationDegrees = 0,
-        bool verticalMirror = false)
+        bool verticalMirror = false,
+        bool preOrientedPixels = false)
     {
-        coordinateMapper.SetupCamera(width, height, frontFacing, rotationDegrees, verticalMirror);
-        coordinateMapper.UpdateCalibration(pixelMin, pixelMax, areaMin, areaMax, worldMin, worldMax);
-        configuredWidth = Mathf.RoundToInt(Mathf.Max(1.0f, width));
-        configuredHeight = Mathf.RoundToInt(Mathf.Max(1.0f, height));
+        ConfigureCameraCalibration(
+            Mathf.RoundToInt(Mathf.Max(1.0f, width)),
+            Mathf.RoundToInt(Mathf.Max(1.0f, height)),
+            frontFacing,
+            rotationDegrees,
+            verticalMirror,
+            preOrientedPixels);
+    }
+
+    private void ConfigureCameraCalibration(
+        int rawWidth,
+        int rawHeight,
+        bool frontFacing,
+        int rotationDegrees,
+        bool verticalMirror,
+        bool preOrientedPixels)
+    {
+        int normalizedRotation = CoordinateMapper.NormalizeRightAngle(rotationDegrees);
+        bool swapsAxes = normalizedRotation == 90 || normalizedRotation == 270;
+        int orientedWidth = swapsAxes ? rawHeight : rawWidth;
+        int orientedHeight = swapsAxes ? rawWidth : rawHeight;
+
+        if (preOrientedPixels)
+        {
+            // MalletTracker.compute already applies VerticallyMirrored then ClockwiseRotation.
+            coordinateMapper.SetupCamera(
+                orientedWidth,
+                orientedHeight,
+                frontFacing,
+                0,
+                false);
+        }
+        else
+        {
+            coordinateMapper.SetupCamera(
+                rawWidth,
+                rawHeight,
+                frontFacing,
+                normalizedRotation,
+                verticalMirror);
+        }
+
+        ResolveCalibrationBoundsForOrientedFrame(
+            orientedWidth,
+            orientedHeight,
+            out Vector2 effectivePixelMin,
+            out Vector2 effectivePixelMax);
+        coordinateMapper.UpdateCalibration(
+            effectivePixelMin,
+            effectivePixelMax,
+            areaMin,
+            areaMax,
+            worldMin,
+            worldMax);
+
+        configuredWidth = orientedWidth;
+        configuredHeight = orientedHeight;
+        configuredRotation = normalizedRotation;
+        configuredVerticallyMirrored = verticalMirror;
         cameraCalibrationReady = true;
+
+        if (hasCustomCalibration)
+        {
+            if (!hasCalibrationFrameSpec)
+            {
+                calibratedOrientedWidth = orientedWidth;
+                calibratedOrientedHeight = orientedHeight;
+                calibratedRotation = normalizedRotation;
+                calibratedVerticallyMirrored = verticalMirror;
+                hasCalibrationFrameSpec = true;
+                recalibrationRequired = false;
+            }
+            else if (calibratedOrientedWidth != orientedWidth
+                || calibratedOrientedHeight != orientedHeight
+                || calibratedRotation != normalizedRotation
+                || calibratedVerticallyMirrored != verticalMirror)
+            {
+                recalibrationRequired = true;
+                leftFilter.Clear();
+                rightFilter.Clear();
+            }
+            else
+            {
+                recalibrationRequired = false;
+            }
+        }
+    }
+
+    private void ResolveCalibrationBoundsForOrientedFrame(
+        int orientedWidth,
+        int orientedHeight,
+        out Vector2 resolvedMin,
+        out Vector2 resolvedMax)
+    {
+        if (!hasCustomCalibration
+            && (orientedWidth != Mathf.RoundToInt(DefaultCalibrationReferenceSize.x)
+                || orientedHeight != Mathf.RoundToInt(DefaultCalibrationReferenceSize.y))
+            && ((IsApproximate(pixelMin, DefaultInspectorPixelMin)
+                    && IsApproximate(pixelMax, DefaultInspectorPixelMax))
+                || pixelMax.x > orientedWidth
+                || pixelMax.y > orientedHeight))
+        {
+            float scaleX = orientedWidth / DefaultCalibrationReferenceSize.x;
+            float scaleY = orientedHeight / DefaultCalibrationReferenceSize.y;
+            resolvedMin = new Vector2(pixelMin.x * scaleX, pixelMin.y * scaleY);
+            resolvedMax = new Vector2(pixelMax.x * scaleX, pixelMax.y * scaleY);
+            return;
+        }
+
+        resolvedMin = pixelMin;
+        resolvedMax = pixelMax;
+    }
+
+    private static bool IsApproximate(Vector2 a, Vector2 b)
+    {
+        return Mathf.Approximately(a.x, b.x) && Mathf.Approximately(a.y, b.y);
     }
 
     internal bool HasAnyPendingReadbackForTesting()
@@ -649,6 +781,11 @@ public sealed class GpuMalletTracker : MonoBehaviour
         cameraCalibrationReady = false;
         configuredWidth = 0;
         configuredHeight = 0;
+        configuredRotation = 0;
+        configuredVerticallyMirrored = false;
+        hasCustomCalibration = false;
+        hasCalibrationFrameSpec = false;
+        recalibrationRequired = false;
         cameraStreamingPublished = false;
     }
 
@@ -688,8 +825,17 @@ public sealed class GpuMalletTracker : MonoBehaviour
         pixelMax = calibratedPixelMax;
         areaMin = calibratedAreaMin;
         areaMax = calibratedAreaMax;
+        hasCustomCalibration = true;
+        recalibrationRequired = false;
+        leftFilter.Clear();
+        rightFilter.Clear();
         if (cameraCalibrationReady)
         {
+            calibratedOrientedWidth = configuredWidth;
+            calibratedOrientedHeight = configuredHeight;
+            calibratedRotation = configuredRotation;
+            calibratedVerticallyMirrored = configuredVerticallyMirrored;
+            hasCalibrationFrameSpec = true;
             coordinateMapper.UpdateCalibration(
                 pixelMin,
                 pixelMax,
@@ -697,6 +843,10 @@ public sealed class GpuMalletTracker : MonoBehaviour
                 areaMax,
                 worldMin,
                 worldMax);
+        }
+        else
+        {
+            hasCalibrationFrameSpec = false;
         }
     }
 }

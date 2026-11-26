@@ -72,4 +72,25 @@ public sealed class KalmanFilterTests
         Assert.That(p3Back, Is.EqualTo(p3));
         Assert.That(v3Back, Is.EqualTo(Vector3.zero));
     }
+
+    [Test]
+    public void KalmanFilter3DDoesNotOvershootPlaneWhenMalletStopsInFront()
+    {
+        var filter = new KalmanFilter3D();
+        filter.SetNoiseParameters(0.05f, 0.5f);
+
+        filter.Update(new Vector3(0.0f, 0.0f, 0.40f), 0.0, out Vector3 p0, out _);
+        filter.Update(new Vector3(0.0f, 0.0f, 0.06f), 33.0, out Vector3 p1, out _);
+        filter.Update(new Vector3(0.0f, 0.0f, 0.06f), 66.0, out Vector3 p2, out _);
+
+        Assert.That(p0.z, Is.EqualTo(0.40f).Within(0.0001f));
+        Assert.That(p1.z, Is.GreaterThanOrEqualTo(0.06f));
+        Assert.That(p2.z, Is.GreaterThanOrEqualTo(0.06f),
+            "Stopping at 0.06m in front of Z=0 must not overshoot into negative Z.");
+
+        // Actual forward crossing past Z=0 still crosses into negative Z.
+        filter.Update(new Vector3(0.0f, 0.0f, -0.02f), 99.0, out Vector3 p3, out Vector3 v3);
+        Assert.That(p3.z, Is.LessThan(0.0f));
+        Assert.That(v3.z, Is.LessThan(0.0f));
+    }
 }
