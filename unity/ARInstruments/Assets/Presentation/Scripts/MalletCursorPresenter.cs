@@ -14,6 +14,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     [SerializeField] private RectTransform leftCursor;
     [SerializeField] private RectTransform rightCursor;
     [SerializeField] private Toggle debugToggle;
+    [SerializeField] private ScreenControlBar screenControlBar;
     [SerializeField, Min(0.05f)] private float maxSampleAgeSeconds = 0.5f;
 
     private struct CursorSample
@@ -27,9 +28,12 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     private CursorSample left;
     private CursorSample right;
     private bool debugEnabled;
+    private bool adminMode = true;
+    private ScreenControlState boundControlState;
     private double acceptAfterTimestampMs;
 
     public bool DebugCursorsEnabled => debugEnabled;
+    public bool IsAdminMode => adminMode;
     public Camera ProjectionCamera => projectionCamera;
 
     private void Awake()
@@ -48,11 +52,12 @@ public sealed class MalletCursorPresenter : MonoBehaviour
         GameEventBus.OnTrackingLostAt += OnTrackingLost;
         if (display != null)
             display.InputInvalidated += InvalidateSamples;
+        BindControlBar();
         if (debugToggle != null)
         {
             debugToggle.onValueChanged.AddListener(SetDebugCursorsEnabled);
-            debugToggle.interactable = true;
             debugToggle.SetIsOnWithoutNotify(debugEnabled);
+            UpdateDebugToggleInteractable();
         }
     }
 
@@ -62,11 +67,26 @@ public sealed class MalletCursorPresenter : MonoBehaviour
         GameEventBus.OnTrackingLostAt -= OnTrackingLost;
         if (display != null)
             display.InputInvalidated -= InvalidateSamples;
+        UnbindControlBar();
         if (debugToggle != null)
         {
             debugToggle.onValueChanged.RemoveListener(SetDebugCursorsEnabled);
             debugToggle.interactable = false;
         }
+        InvalidateSamples();
+    }
+
+    public void SetAdminMode(bool value)
+    {
+        if (adminMode == value)
+        {
+            UpdateDebugToggleInteractable();
+            return;
+        }
+
+        adminMode = value;
+        UpdateDebugToggleInteractable();
+        // Force cursors hidden and reject pre-transition samples across mode changes.
         InvalidateSamples();
     }
 
@@ -91,8 +111,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!debugEnabled || display == null || !display.isActiveAndEnabled
-            || display.Status != CameraDisplayStatus.Streaming || projectionCamera == null)
+        if (!CanProcessTracking())
         {
             ResetSamples();
             HideCursors();
@@ -106,8 +125,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void OnMalletsTracked(MalletState first, MalletState second)
     {
-        if (!debugEnabled || display == null || !display.isActiveAndEnabled
-            || display.Status != CameraDisplayStatus.Streaming || projectionCamera == null)
+        if (!CanProcessTracking())
             return;
         Accept(first);
         Accept(second);
@@ -143,8 +161,7 @@ public sealed class MalletCursorPresenter : MonoBehaviour
 
     private void OnTrackingLost(int malletId, double timestampMs)
     {
-        if (!debugEnabled || display == null || !display.isActiveAndEnabled
-            || display.Status != CameraDisplayStatus.Streaming || projectionCamera == null
+        if (!CanProcessTracking()
             || !IsValidTimestamp(timestampMs, Time.realtimeSinceStartupAsDouble * 1000.0)
             || timestampMs <= acceptAfterTimestampMs)
             return;
@@ -205,6 +222,40 @@ public sealed class MalletCursorPresenter : MonoBehaviour
     {
         SetVisible(leftCursor, false);
         SetVisible(rightCursor, false);
+    }
+
+    private bool CanProcessTracking() =>
+        adminMode && debugEnabled && display != null && display.isActiveAndEnabled
+        && display.Status == CameraDisplayStatus.Streaming && projectionCamera != null;
+
+    private void BindControlBar()
+    {
+        UnbindControlBar();
+        ScreenControlBar bar = ScreenControlBar.Resolve(this, screenControlBar);
+        if (bar == null)
+            return;
+
+        boundControlState = bar.State;
+        boundControlState.ModeChanged += OnScreenModeChanged;
+        SetAdminMode(boundControlState.Mode == ScreenMode.Administrator);
+    }
+
+    private void UnbindControlBar()
+    {
+        if (boundControlState != null)
+            boundControlState.ModeChanged -= OnScreenModeChanged;
+        boundControlState = null;
+    }
+
+    private void OnScreenModeChanged(ScreenMode mode)
+    {
+        SetAdminMode(mode == ScreenMode.Administrator);
+    }
+
+    private void UpdateDebugToggleInteractable()
+    {
+        if (debugToggle != null)
+            debugToggle.interactable = isActiveAndEnabled && adminMode;
     }
 
     private static void SetVisible(RectTransform cursor, bool value)

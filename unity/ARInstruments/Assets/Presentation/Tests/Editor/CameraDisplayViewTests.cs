@@ -302,10 +302,24 @@ public sealed class CameraDisplayPreviewPlayTests
         yield return null;
         yield return null;
         CameraDisplayView view = Object.FindFirstObjectByType<CameraDisplayView>();
+        ScreenControlBar controlBar = Object.FindFirstObjectByType<ScreenControlBar>();
         Assert.That(view.Status, Is.EqualTo(CameraDisplayStatus.Streaming));
         Toggle toggle = view.GetComponentInChildren<Toggle>(true);
+        GameObject footer = view.transform.Find("Footer").gameObject;
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
+        Assert.That(view.IsAdminMode, Is.False);
+        Assert.That(footer.activeSelf, Is.False);
+        Assert.That(toggle.interactable, Is.False);
+        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: false);
+
+        ClickModeButton(controlBar);
+        yield return null;
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.Administrator));
+        Assert.That(view.IsAdminMode, Is.True);
+        Assert.That(footer.activeSelf, Is.True);
         Assert.That(toggle.interactable, Is.True);
         Assert.That(view.MirrorEnabled, Is.False);
+        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: true);
         CaptureState(view, "streaming");
         ClickToggleLabel(view, "MirrorToggle");
         yield return null;
@@ -357,7 +371,97 @@ public sealed class CameraDisplayPreviewPlayTests
         Assert.That(view.MirrorEnabled, Is.False);
         ClickToggleLabel(view, "MirrorToggle");
         Assert.That(view.MirrorEnabled, Is.True);
+        ClickModeButton(controlBar);
+        yield return null;
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
+        Assert.That(footer.activeSelf, Is.False);
+        Assert.That(toggle.interactable, Is.False);
+        AssertNoBottomUiOverlap(view, controlBar, expectFooterVisible: false);
         yield return new ExitPlayMode();
+    }
+
+    internal static void ClickModeButton(ScreenControlBar bar)
+    {
+        Canvas.ForceUpdateCanvases();
+        RectTransform modeRect = bar.transform.Find("ScreenControls/SafeArea/BottomBar/Mode") as RectTransform;
+        Assert.That(modeRect, Is.Not.Null);
+        PointerEventData pointer = new PointerEventData(EventSystem.current)
+        {
+            button = PointerEventData.InputButton.Left,
+            position = RectTransformUtility.WorldToScreenPoint(null, modeRect.TransformPoint(modeRect.rect.center))
+        };
+        List<RaycastResult> hits = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(pointer, hits);
+        Assert.That(hits.Count, Is.GreaterThan(0), "The Mode button must be raycastable.");
+        Assert.That(hits[0].gameObject, Is.EqualTo(modeRect.gameObject));
+        Assert.That(ExecuteEvents.ExecuteHierarchy(hits[0].gameObject, pointer, ExecuteEvents.pointerClickHandler),
+            Is.Not.Null);
+    }
+
+    internal static void AssertNoBottomUiOverlap(CameraDisplayView view, ScreenControlBar bar, bool expectFooterVisible)
+    {
+        Canvas.ForceUpdateCanvases();
+        RectTransform bottomBar = bar.transform.Find("ScreenControls/SafeArea/BottomBar") as RectTransform;
+        RectTransform status = bar.transform.Find("ScreenControls/SafeArea/Status") as RectTransform;
+        RectTransform previewFrame = view.transform.Find("PreviewFrame") as RectTransform;
+        RectTransform footer = view.transform.Find("Footer") as RectTransform;
+
+        Assert.That(bottomBar, Is.Not.Null);
+        Assert.That(status, Is.Not.Null);
+        Assert.That(previewFrame, Is.Not.Null);
+        Assert.That(footer, Is.Not.Null);
+        Assert.That(footer.gameObject.activeInHierarchy, Is.EqualTo(expectFooterVisible));
+
+        Rect bottomBarRect = GetScreenRect(bottomBar);
+        Rect statusRect = GetScreenRect(status);
+        Rect previewRect = GetScreenRect(previewFrame);
+
+        Assert.That(bottomBarRect.yMax, Is.LessThanOrEqualTo(statusRect.yMin + 0.01f),
+            "ScreenControlBar BottomBar must not overlap Status.");
+        Assert.That(statusRect.yMax, Is.LessThanOrEqualTo(previewRect.yMin + 0.01f),
+            "ScreenControlBar Status must not overlap PreviewFrame.");
+
+        if (!expectFooterVisible)
+            return;
+
+        Rect footerRect = GetScreenRect(footer);
+        Assert.That(bottomBarRect.yMax, Is.LessThanOrEqualTo(footerRect.yMin + 0.01f),
+            "Footer must sit completely above ScreenControlBar BottomBar.");
+        Assert.That(statusRect.yMax, Is.LessThanOrEqualTo(footerRect.yMin + 0.01f),
+            "Footer must sit completely above ScreenControlBar Status.");
+        Assert.That(footerRect.yMax, Is.LessThanOrEqualTo(previewRect.yMin + 0.01f),
+            "Footer must not overlap PreviewFrame.");
+
+        RectTransform mirrorToggle = footer.Find("MirrorToggle") as RectTransform;
+        RectTransform cursorToggle = footer.Find("CursorDebugToggle") as RectTransform;
+        RectTransform statusText = footer.Find("StatusText") as RectTransform;
+        RectTransform statusDetail = footer.Find("StatusDetail") as RectTransform;
+        Rect mirrorRect = GetScreenRect(mirrorToggle);
+        Rect cursorRect = GetScreenRect(cursorToggle);
+        Rect statusTextRect = GetScreenRect(statusText);
+        Rect statusDetailRect = GetScreenRect(statusDetail);
+
+        Assert.That(cursorRect.xMax, Is.LessThanOrEqualTo(mirrorRect.xMin + 0.01f),
+            "CursorDebugToggle and MirrorToggle must not overlap horizontally.");
+        Assert.That(statusTextRect.xMax, Is.LessThanOrEqualTo(cursorRect.xMin + 0.01f),
+            "Footer StatusText must not overlap CursorDebugToggle.");
+        Assert.That(statusDetailRect.xMax, Is.LessThanOrEqualTo(cursorRect.xMin + 0.01f),
+            "Footer StatusDetail must not overlap CursorDebugToggle.");
+    }
+
+    private static Rect GetScreenRect(RectTransform rect)
+    {
+        Vector3[] corners = new Vector3[4];
+        rect.GetWorldCorners(corners);
+        Vector2 min = RectTransformUtility.WorldToScreenPoint(null, corners[0]);
+        Vector2 max = min;
+        for (int i = 1; i < 4; i++)
+        {
+            Vector2 p = RectTransformUtility.WorldToScreenPoint(null, corners[i]);
+            min = Vector2.Min(min, p);
+            max = Vector2.Max(max, p);
+        }
+        return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
     }
 
     internal static void ClickToggleLabel(CameraDisplayView view, string toggleName)

@@ -17,6 +17,7 @@ public sealed class CameraDisplayCursorRegressionTests
         yield return null;
         Object.FindFirstObjectByType<MalletCursorPreviewSource>().enabled = false;
         Object.FindFirstObjectByType<CameraDisplayPreviewSource>().enabled = false;
+        Object.FindFirstObjectByType<ScreenControlBar>().State.SetMode(ScreenMode.Administrator);
         CameraDisplayView display = Object.FindFirstObjectByType<CameraDisplayView>();
         MalletCursorPresenter cursors = Object.FindFirstObjectByType<MalletCursorPresenter>();
         Texture2D texture = new Texture2D(320, 180);
@@ -72,6 +73,7 @@ public sealed class CameraDisplayCursorRegressionTests
         yield return null;
         Object.FindFirstObjectByType<MalletCursorPreviewSource>().enabled = false;
         Object.FindFirstObjectByType<CameraDisplayPreviewSource>().enabled = false;
+        Object.FindFirstObjectByType<ScreenControlBar>().State.SetMode(ScreenMode.Administrator);
         CameraDisplayView display = Object.FindFirstObjectByType<CameraDisplayView>();
         MalletCursorPresenter cursors = Object.FindFirstObjectByType<MalletCursorPresenter>();
         Texture2D texture = new Texture2D(320, 180);

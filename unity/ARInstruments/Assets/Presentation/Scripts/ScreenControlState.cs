@@ -69,7 +69,14 @@ public sealed class ScreenControlState
 
     public void ToggleMode()
     {
-        Mode = Mode == ScreenMode.User ? ScreenMode.Administrator : ScreenMode.User;
+        SetMode(Mode == ScreenMode.User ? ScreenMode.Administrator : ScreenMode.User);
+    }
+
+    public void SetMode(ScreenMode mode)
+    {
+        if (!Enum.IsDefined(typeof(ScreenMode), mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (Mode == mode) return;
+        Mode = mode;
         ModeChanged?.Invoke(Mode);
         Changed?.Invoke();
     }

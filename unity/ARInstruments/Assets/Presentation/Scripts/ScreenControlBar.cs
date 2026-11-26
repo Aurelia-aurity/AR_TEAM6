@@ -85,15 +85,21 @@ public sealed class ScreenControlBar : MonoBehaviour
 
     private void Build()
     {
+        bool isNestedCanvas = GetComponentInParent<Canvas>() != null;
         RectTransform canvasRect = Rect("ScreenControls", transform);
+        if (isNestedCanvas)
+            Stretch(canvasRect);
         var canvas = canvasRect.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.overrideSorting = true;
         canvas.sortingOrder = 100;
-        var scaler = canvasRect.gameObject.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1280, 720);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        if (!isNestedCanvas)
+        {
+            var scaler = canvasRect.gameObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1280, 720);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        }
         canvasRect.gameObject.AddComponent<GraphicRaycaster>();
         root = Rect("SafeArea", canvasRect);
         Stretch(root);
@@ -191,6 +197,19 @@ public sealed class ScreenControlBar : MonoBehaviour
         label.alignment = TextAnchor.MiddleCenter;
         label.raycastTarget = false;
         return label;
+    }
+
+    internal static ScreenControlBar Resolve(Component host, ScreenControlBar explicitBar)
+    {
+        if (explicitBar != null)
+            return explicitBar;
+        if (host != null)
+        {
+            ScreenControlBar local = host.GetComponentInParent<ScreenControlBar>();
+            if (local != null)
+                return local;
+        }
+        return FindFirstObjectByType<ScreenControlBar>(FindObjectsInactive.Include);
     }
 
     private static RectTransform Rect(string name, Transform parent)
