@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-/// <summary>Shared drumhead creation, mallet dragging and strike scenario playback for drum previews.</summary>
+/// <summary>Mallet dragging, pose controls and strike scenario playback for drum previews.</summary>
 public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     protected abstract string RegionA { get; }
@@ -11,8 +11,8 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
     protected abstract Transform InstrumentRoot { get; }
 
-    /// <summary>Plays the instrument-specific sound and returns its display label.</summary>
-    protected abstract string PlayHitSound(HitEvent hit);
+    /// <summary>Returns the instrument-specific sound label without triggering playback.</summary>
+    protected abstract string GetHitSoundLabel(HitEvent hit);
 
     [SerializeField] private Camera previewCamera;
 
@@ -31,7 +31,8 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     private Plane dragPlane;
     private readonly PreviewMallet leftMallet = new PreviewMallet();
     private readonly PreviewMallet rightMallet = new PreviewMallet();
-    private HitDetectionCore core;
+    private DrumStrikeSurfaces strikeSurfaces;
+    private InstrumentHitRuntime runtime;
     private Transform surface;
     private InstrumentPad padA;
     private InstrumentPad padB;
@@ -49,22 +50,24 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
     protected virtual void OnEnable()
     {
-        padA = CreatePad("Head_A_Inner", "Head_B_Inner", RegionA);
-        padB = CreatePad("Head_B_Inner", "Head_A_Inner", RegionB);
-        if (padA == null || padB == null)
+        if (!DrumStrikeSurfaces.TryCreate(InstrumentRoot,
+            new DrumHeadDefinition("Head_A_Inner", RegionA),
+            new DrumHeadDefinition("Head_B_Inner", RegionB), out strikeSurfaces))
         {
             Debug.LogError("The preview requires both inner drumhead meshes.", this);
             enabled = false;
             return;
         }
 
+        padA = strikeSurfaces.PadA;
+        padB = strikeSurfaces.PadB;
         surface = padA.HitSurface;
         Vector3 outward = surface.forward;
         Vector3 up = surface.up;
         initialPosition = InstrumentRoot.localPosition;
         initialRotation = InstrumentRoot.localRotation;
-        core = new HitDetectionCore();
-        core.Subscribe();
+        runtime = new InstrumentHitRuntime(strikeSurfaces.Pads);
+        runtime.Subscribe();
         GameEventBus.OnValidHit += CountHit;
 
         Vector3 cameraOffset = outward * 0.95f + up * 0.22f + surface.right * 0.8f;
@@ -74,63 +77,21 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         ResetMallet();
     }
 
-    private InstrumentPad CreatePad(string meshName, string oppositeMeshName, string regionId)
-    {
-        MeshFilter[] heads = InstrumentRoot.GetComponentsInChildren<MeshFilter>();
-        MeshFilter head = System.Array.Find(heads, mesh => mesh.name == meshName);
-        MeshFilter opposite = System.Array.Find(heads, mesh => mesh.name == oppositeMeshName);
-        if (head == null || head.sharedMesh == null || opposite == null || opposite.sharedMesh == null)
-        {
-            return null;
-        }
-
-        Bounds bounds = head.sharedMesh.bounds;
-        Transform meshTransform = head.transform;
-        Vector3 headCenter = meshTransform.TransformPoint(bounds.center);
-        Vector3 oppositeCenter = opposite.transform.TransformPoint(opposite.sharedMesh.bounds.center);
-        // A/B labels do not imply an axis sign: Buk and Janggu use opposite layouts.
-        Vector3 headAxis = meshTransform.TransformDirection(Vector3.right);
-        float outwardSign = Vector3.Dot(headAxis, headCenter - oppositeCenter) >= 0f ? 1f : -1f;
-        Transform strikeSurface = new GameObject(meshName + " Strike Surface").transform;
-        Vector3 center = bounds.center;
-        center.x = outwardSign > 0f ? bounds.max.x : bounds.min.x;
-        Vector3 outward = meshTransform.TransformDirection(Vector3.right * outwardSign);
-        Vector3 up = meshTransform.TransformDirection(Vector3.up);
-        strikeSurface.SetPositionAndRotation(meshTransform.TransformPoint(center), Quaternion.LookRotation(outward, up));
-        strikeSurface.SetParent(InstrumentRoot, true);
-
-        float width = meshTransform.TransformVector(Vector3.forward * bounds.size.z).magnitude;
-        float height = meshTransform.TransformVector(Vector3.up * bounds.size.y).magnitude;
-        return new InstrumentPad
-        {
-            PadId = regionId,
-            HitSurface = strikeSurface,
-            HitBox2D = new Rect(-width * 0.5f, -height * 0.5f, width, height)
-        };
-    }
-
     protected virtual void OnDisable()
     {
         StopScenario();
         leftMallet.PointerId = null;
         rightMallet.PointerId = null;
         GameEventBus.OnValidHit -= CountHit;
-        core?.Dispose();
-        core = null;
-        if (padA != null && padA.HitSurface)
-        {
-            Destroy(padA.HitSurface.gameObject);
-        }
-
-        if (padB != null && padB.HitSurface)
-        {
-            Destroy(padB.HitSurface.gameObject);
-        }
+        runtime?.Dispose();
+        runtime = null;
+        strikeSurfaces?.Dispose();
+        strikeSurfaces = null;
     }
 
     public void ApplyPose(float _)
     {
-        if (core == null)
+        if (runtime == null)
         {
             return;
         }
@@ -315,14 +276,12 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
     private void ResetTracking()
     {
-        core.ClearPads();
-        core.RegisterPad(padA);
-        core.RegisterPad(padB);
+        runtime.ResetTracking();
     }
 
     private void RunSequence(int malletId, float horizontalOffset, int expectedHits, params float[] depths)
     {
-        if (core == null)
+        if (runtime == null)
         {
             return;
         }
@@ -418,7 +377,7 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         {
             hits++;
             lastHitStrength = hit.HitForce;
-            lastHitSound = PlayHitSound(hit);
+            lastHitSound = GetHitSoundLabel(hit);
             string malletLabel = hit.MalletId == 0 ? "L" : "R";
             if (hit.InstrumentId == RegionA)
             {
