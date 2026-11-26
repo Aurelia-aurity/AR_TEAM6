@@ -25,9 +25,11 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     [SerializeField] private Slider positionY;
     [SerializeField] private Slider positionZ;
     [SerializeField] private Slider rotationY;
+    [SerializeField] private Slider scale;
 
     private Vector3 initialPosition;
     private Quaternion initialRotation;
+    private Vector3 initialScale;
     private Plane dragPlane;
     private readonly PreviewMallet leftMallet = new PreviewMallet();
     private readonly PreviewMallet rightMallet = new PreviewMallet();
@@ -46,6 +48,7 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
     private Coroutine scenarioPlayback;
     private Vector3 positionBeforeScenario;
     private PreviewMallet scenarioMallet;
+    public bool IsScenarioPlaying => scenarioPlayback != null;
 
 
     protected virtual void OnEnable()
@@ -66,6 +69,7 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         Vector3 up = surface.up;
         initialPosition = InstrumentRoot.localPosition;
         initialRotation = InstrumentRoot.localRotation;
+        initialScale = InstrumentRoot.localScale;
         runtime = new InstrumentHitRuntime(strikeSurfaces.Pads);
         runtime.Subscribe();
         GameEventBus.OnValidHit += CountHit;
@@ -98,6 +102,26 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
 
         InstrumentRoot.localPosition = initialPosition + new Vector3(positionX.value, positionY.value, positionZ.value);
         InstrumentRoot.localRotation = initialRotation * Quaternion.Euler(0f, rotationY.value, 0f);
+        Vector3 targetScale = initialScale * (scale != null ? scale.value : 1f);
+        if (InstrumentRoot.localScale != targetScale)
+        {
+            StopScenario();
+            InstrumentRoot.localScale = targetScale;
+            runtime.Dispose();
+            strikeSurfaces.Dispose();
+            if (!DrumStrikeSurfaces.TryCreate(InstrumentRoot,
+                new DrumHeadDefinition("Head_A_Inner", RegionA),
+                new DrumHeadDefinition("Head_B_Inner", RegionB), out strikeSurfaces))
+            {
+                Debug.LogError("The preview requires both inner drumhead meshes.", this);
+                enabled = false;
+                return;
+            }
+            padA = strikeSurfaces.PadA;
+            padB = strikeSurfaces.PadB;
+            runtime = new InstrumentHitRuntime(strikeSurfaces.Pads);
+            runtime.Subscribe();
+        }
         RepositionMallets();
     }
 
@@ -107,7 +131,13 @@ public abstract class DrumHitPreview : MonoBehaviour, IBeginDragHandler, IDragHa
         positionY.SetValueWithoutNotify(0f);
         positionZ.SetValueWithoutNotify(0f);
         rotationY.SetValueWithoutNotify(0f);
+        if (scale != null) scale.SetValueWithoutNotify(1f);
         ApplyPose(0f);
+    }
+
+    public void ShowOtherFace()
+    {
+        rotationY.value = Mathf.DeltaAngle(0f, rotationY.value + 180f);
     }
 
     public void ResetMallet()
