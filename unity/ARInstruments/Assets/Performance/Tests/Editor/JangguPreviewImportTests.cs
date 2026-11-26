@@ -20,7 +20,7 @@ public sealed class JangguPreviewImportTests
     public void SetUp()
     {
         editorType = AppDomain.CurrentDomain.GetAssemblies()
-            .Select(assembly => assembly.GetType("JangguSoundProfileEditor"))
+            .Select(assembly => assembly.GetType("InstrumentSoundProfileEditor"))
             .First(type => type != null);
         profile = ScriptableObject.CreateInstance<JangguSoundProfile>();
         editor = Editor.CreateEditor(profile, editorType);
