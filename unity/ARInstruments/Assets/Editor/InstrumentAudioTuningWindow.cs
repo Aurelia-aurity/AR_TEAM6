@@ -33,14 +33,14 @@ internal sealed class InstrumentAudioTuningWindow : EditorWindow
         }
     }
 
-    [MenuItem("ARInstruments/Janggu Audio Tuning")]
+    [MenuItem("ARInstruments/Audio Tuning/Janggu")]
     private static void Open()
     {
         var window = GetWindow<InstrumentAudioTuningWindow>("Instrument Audio Tuning");
         window.profile = AssetDatabase.LoadAssetAtPath<InstrumentSoundProfile>(DefaultProfilePath);
     }
 
-    [MenuItem("ARInstruments/Buk Audio Tuning")]
+    [MenuItem("ARInstruments/Audio Tuning/Buk")]
     private static void OpenBuk()
     {
         var window = GetWindow<InstrumentAudioTuningWindow>("Instrument Audio Tuning");
