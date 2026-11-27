@@ -69,20 +69,35 @@ public sealed class CoordinateMapper
     /// </summary>
     public Vector2 NormalizePixelPosition(Vector2 pixelPosition)
     {
+        return NormalizePixelPosition(
+            pixelPosition,
+            cameraResolution.x,
+            cameraResolution.y,
+            clockwiseRotation,
+            verticallyMirrored);
+    }
+
+    internal static Vector2 NormalizePixelPosition(
+        Vector2 pixelPosition,
+        float width,
+        float height,
+        int rotationDegrees,
+        bool verticalMirror)
+    {
         float x = pixelPosition.x;
-        float y = verticallyMirrored
-            ? cameraResolution.y - pixelPosition.y
+        float y = verticalMirror
+            ? height - pixelPosition.y
             : pixelPosition.y;
 
-        int normalizedRotation = NormalizeRightAngle(clockwiseRotation);
+        int normalizedRotation = NormalizeRightAngle(rotationDegrees);
         switch (normalizedRotation)
         {
             case 90:
-                return new Vector2(cameraResolution.y - y, x);
+                return new Vector2(height - y, x);
             case 180:
-                return new Vector2(cameraResolution.x - x, cameraResolution.y - y);
+                return new Vector2(width - x, height - y);
             case 270:
-                return new Vector2(y, cameraResolution.x - x);
+                return new Vector2(y, width - x);
             default:
                 return new Vector2(x, y);
         }

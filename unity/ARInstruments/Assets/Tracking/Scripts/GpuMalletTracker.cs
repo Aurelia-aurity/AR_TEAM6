@@ -672,9 +672,8 @@ public sealed class GpuMalletTracker : MonoBehaviour
         ResolveCalibrationBoundsForOrientedFrame(
             rawWidth,
             rawHeight,
-            orientedWidth,
-            orientedHeight,
-            swapsAxes,
+            normalizedRotation,
+            verticalMirror,
             out Vector2 effectivePixelMin,
             out Vector2 effectivePixelMax);
         coordinateMapper.UpdateCalibration(
@@ -723,18 +722,24 @@ public sealed class GpuMalletTracker : MonoBehaviour
     private void ResolveCalibrationBoundsForOrientedFrame(
         int rawWidth,
         int rawHeight,
-        int orientedWidth,
-        int orientedHeight,
-        bool swapsAxes,
+        int normalizedRotation,
+        bool verticalMirror,
         out Vector2 resolvedMin,
         out Vector2 resolvedMax)
     {
-        if (!hasCustomCalibration && swapsAxes)
+        if (!hasCustomCalibration && (normalizedRotation != 0 || verticalMirror))
         {
-            float scaleX = orientedWidth / (float)Mathf.Max(1, rawWidth);
-            float scaleY = orientedHeight / (float)Mathf.Max(1, rawHeight);
-            resolvedMin = new Vector2(pixelMin.x * scaleX, pixelMin.y * scaleY);
-            resolvedMax = new Vector2(pixelMax.x * scaleX, pixelMax.y * scaleY);
+            Vector2 c0 = CoordinateMapper.NormalizePixelPosition(
+                new Vector2(pixelMin.x, pixelMin.y), rawWidth, rawHeight, normalizedRotation, verticalMirror);
+            Vector2 c1 = CoordinateMapper.NormalizePixelPosition(
+                new Vector2(pixelMax.x, pixelMin.y), rawWidth, rawHeight, normalizedRotation, verticalMirror);
+            Vector2 c2 = CoordinateMapper.NormalizePixelPosition(
+                new Vector2(pixelMin.x, pixelMax.y), rawWidth, rawHeight, normalizedRotation, verticalMirror);
+            Vector2 c3 = CoordinateMapper.NormalizePixelPosition(
+                new Vector2(pixelMax.x, pixelMax.y), rawWidth, rawHeight, normalizedRotation, verticalMirror);
+
+            resolvedMin = Vector2.Min(Vector2.Min(c0, c1), Vector2.Min(c2, c3));
+            resolvedMax = Vector2.Max(Vector2.Max(c0, c1), Vector2.Max(c2, c3));
             return;
         }
 
@@ -938,13 +943,11 @@ public sealed class GpuMalletTracker : MonoBehaviour
         rightFilter.Clear();
         if (cameraCalibrationReady)
         {
-            bool swapsAxes = configuredRotation == 90 || configuredRotation == 270;
             ResolveCalibrationBoundsForOrientedFrame(
                 configuredRawWidth,
                 configuredRawHeight,
-                configuredWidth,
-                configuredHeight,
-                swapsAxes,
+                configuredRotation,
+                configuredVerticallyMirrored,
                 out Vector2 effectivePixelMin,
                 out Vector2 effectivePixelMax);
             coordinateMapper.UpdateCalibration(

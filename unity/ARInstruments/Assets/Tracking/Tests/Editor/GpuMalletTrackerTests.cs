@@ -210,4 +210,50 @@ public sealed class GpuMalletTrackerTests
         Assert.That(afterRecalib.Position.x, Is.EqualTo(0.0f).Within(0.01f));
         Assert.That(afterRecalib.Position.y, Is.EqualTo(0.0f).Within(0.01f));
     }
+
+    [Test]
+    public void Tilted45DegreePlaneObservationsStayingInFrontKeepEmittedPositionsInFront()
+    {
+        Vector3 planePoint = new Vector3(0.0f, 0.0f, 0.5f);
+        Vector3 planeNormal = new Vector3(1.0f, 0.0f, 1.0f).normalized;
+
+        // m0=(0.20, 0, 0.80), m1=(-0.25, 0, 0.80), m2=(0.35, 0, 0.20) in worldMin=(-5,-3,0), worldMax=(5,3,2).
+        MalletState s0 = tracker.ProcessLeftSampleForTesting(612352u, 360u * 920u, 920u, 0.0);
+        MalletState s1 = tracker.ProcessLeftSampleForTesting(608u * 920u, 360u * 920u, 920u, 33.0);
+        MalletState s2 = tracker.ProcessLeftSampleForTesting(260224u, 360u * 380u, 380u, 66.0);
+
+        Assert.That(Vector3.Dot(s0.Position - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f));
+        Assert.That(Vector3.Dot(s1.Position - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f));
+        Assert.That(Vector3.Dot(s2.Position - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f),
+            "Emitted MalletState.Position must remain in front of a 45-degree tilted plane.");
+    }
+
+    [TestCase(90, true, 360u, 860u, 0.0f, -1.50f)]
+    [TestCase(90, true, 280u, 640u, -2.50f, 0.0f)]
+    [TestCase(270, true, 360u, 860u, 0.0f, -1.50f)]
+    public void DefaultCalibrationAfter90Or270RotationMapsOffCenterMarkersAccurately(
+        int rotationDegrees,
+        bool preOrientedPixels,
+        uint pixelX,
+        uint pixelY,
+        float expectedWorldX,
+        float expectedWorldY)
+    {
+        tracker.pixelMin = new Vector2(200.0f, 200.0f);
+        tracker.pixelMax = new Vector2(1080.0f, 520.0f);
+        tracker.ConfigureMapperForTesting(
+            1280.0f,
+            720.0f,
+            frontFacing: false,
+            rotationDegrees: rotationDegrees,
+            verticalMirror: false,
+            preOrientedPixels: preOrientedPixels);
+
+        uint area = 1100u;
+        MalletState state = tracker.ProcessLeftSampleForTesting(pixelX * area, pixelY * area, area, 100.0);
+
+        Assert.That(state.Confidence, Is.GreaterThan(0.0f));
+        Assert.That(state.Position.x, Is.EqualTo(expectedWorldX).Within(0.01f));
+        Assert.That(state.Position.y, Is.EqualTo(expectedWorldY).Within(0.01f));
+    }
 }

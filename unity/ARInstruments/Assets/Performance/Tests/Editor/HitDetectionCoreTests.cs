@@ -140,6 +140,72 @@ public sealed class HitDetectionCoreTests
     }
 
     [Test]
+    public void Tilted45DegreeSurface_GpuMalletTrackerFilterOutputStayingInFront_ProducesZeroHits()
+    {
+        var trackerType = System.Type.GetType("GpuMalletTracker, ARInstruments.Tracking");
+        Assert.That(trackerType, Is.Not.Null);
+
+        GameObject trackerGo = new GameObject("TiltedPlaneTrackerTest");
+        trackerGo.SetActive(false);
+        try
+        {
+            Component tracker = trackerGo.AddComponent(trackerType);
+            trackerType.GetField("minPixelArea").SetValue(tracker, 100u);
+            trackerType.GetField("processNoise").SetValue(tracker, 0.05f);
+            trackerType.GetField("measurementNoise").SetValue(tracker, 0.5f);
+            trackerType.GetField("pixelMin").SetValue(tracker, new Vector2(0f, 0f));
+            trackerType.GetField("pixelMax").SetValue(tracker, new Vector2(1280f, 720f));
+            trackerType.GetField("areaMin").SetValue(tracker, 200.0);
+            trackerType.GetField("areaMax").SetValue(tracker, 2000.0);
+            trackerType.GetField("worldMin").SetValue(tracker, new Vector3(-5f, -3f, 0f));
+            trackerType.GetField("worldMax").SetValue(tracker, new Vector3(5f, 3f, 2f));
+
+            var configureMethod = trackerType.GetMethod(
+                "ConfigureMapperForTesting",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(configureMethod, Is.Not.Null);
+            configureMethod.Invoke(tracker, new object[] { 1280f, 720f, false, 0, false, false });
+
+            var processMethod = trackerType.GetMethod(
+                "ProcessLeftSampleForTesting",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(processMethod, Is.Not.Null);
+
+            core.ClearPads();
+            surface.transform.SetPositionAndRotation(new Vector3(0f, 0f, 0.5f), Quaternion.Euler(0f, 45f, 0f));
+            core.RegisterPad(new InstrumentPad
+            {
+                PadId = "tilted_pad",
+                HitSurface = surface.transform,
+                HitBox2D = new Rect(-1f, -1f, 2f, 2f)
+            });
+
+            // All 3 observations remain >= +3.5355cm in front of the 45-degree plane.
+            MalletState s0 = (MalletState)processMethod.Invoke(tracker, new object[] { 612352u, 360u * 920u, 920u, 0.0 });
+            MalletState s1 = (MalletState)processMethod.Invoke(tracker, new object[] { 608u * 920u, 360u * 920u, 920u, 33.0 });
+            MalletState s2 = (MalletState)processMethod.Invoke(tracker, new object[] { 260224u, 360u * 380u, 380u, 66.0 });
+
+            Assert.That(surface.transform.InverseTransformPoint(s0.Position).z, Is.GreaterThanOrEqualTo(0.035f));
+            Assert.That(surface.transform.InverseTransformPoint(s1.Position).z, Is.GreaterThanOrEqualTo(0.035f));
+            Assert.That(surface.transform.InverseTransformPoint(s2.Position).z, Is.GreaterThanOrEqualTo(0.035f));
+
+            core.ProcessMalletState(s0);
+            core.ProcessMalletState(s1);
+            core.ProcessMalletState(s2);
+            Assert.That(hits, Is.Empty, "Observations staying in front of a 45-deg plane must produce 0 hits.");
+
+            // An actual crossing behind the 45-degree plane still triggers 1 hit.
+            MalletState s3 = (MalletState)processMethod.Invoke(tracker, new object[] { 263840u, 360u * 425u, 425u, 99.0 });
+            core.ProcessMalletState(s3);
+            Assert.That(hits, Has.Count.EqualTo(1));
+        }
+        finally
+        {
+            Object.DestroyImmediate(trackerGo);
+        }
+    }
+
+    [Test]
     public void CrossingRequiresTwoActiveSamplesAndPreservesTheirVersion()
     {
         try

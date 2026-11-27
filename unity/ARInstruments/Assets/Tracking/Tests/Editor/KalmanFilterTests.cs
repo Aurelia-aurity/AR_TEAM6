@@ -93,4 +93,27 @@ public sealed class KalmanFilterTests
         Assert.That(p3.z, Is.LessThan(0.0f));
         Assert.That(v3.z, Is.LessThan(0.0f));
     }
+
+    [Test]
+    public void KalmanFilter3DStaysInFrontOf45DegreeTiltedPlaneWhenObservationsStayInFront()
+    {
+        var filter = new KalmanFilter3D();
+        filter.SetNoiseParameters(0.05f, 0.5f);
+
+        Vector3 planePoint = new Vector3(0.0f, 0.0f, 0.5f);
+        Vector3 planeNormal = new Vector3(1.0f, 0.0f, 1.0f).normalized;
+
+        // Observations at 33ms intervals: m1 and m2 are both +3.5355cm in front of the 45-deg plane.
+        filter.Update(new Vector3(0.20f, 0.0f, 0.80f), 0.0, out Vector3 p0, out _);
+        filter.Update(new Vector3(-0.25f, 0.0f, 0.80f), 33.0, out Vector3 p1, out _);
+        filter.Update(new Vector3(0.35f, 0.0f, 0.20f), 66.0, out Vector3 p2, out _);
+
+        Assert.That(Vector3.Dot(p0 - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f));
+        Assert.That(Vector3.Dot(p1 - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f));
+        Assert.That(Vector3.Dot(p2 - planePoint, planeNormal), Is.GreaterThanOrEqualTo(0.035f),
+            "Line-segment projection must keep filtered output in front of arbitrary tilted planes.");
+
+        filter.Update(new Vector3(-0.15f, 0.0f, 0.25f), 99.0, out Vector3 p3, out _);
+        Assert.That(Vector3.Dot(p3 - planePoint, planeNormal), Is.LessThan(0.0f));
+    }
 }
