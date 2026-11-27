@@ -118,4 +118,26 @@ public sealed class ScreenControlStateTests
         Assert.AreEqual(1, changes);
         Assert.IsFalse(state.IsRunning);
     }
+
+    [Test]
+    public void SetModeUpdatesStateIdempotentlyAndRejectsInvalidValues()
+    {
+        var state = new ScreenControlState();
+        int modeChanges = 0;
+        ScreenMode latest = state.Mode;
+        state.ModeChanged += mode => { modeChanges++; latest = mode; };
+
+        state.SetMode(ScreenMode.User);
+        Assert.AreEqual(0, modeChanges);
+
+        state.SetMode(ScreenMode.Administrator);
+        Assert.AreEqual(ScreenMode.Administrator, state.Mode);
+        Assert.AreEqual(ScreenMode.Administrator, latest);
+        Assert.AreEqual(1, modeChanges);
+
+        state.SetMode(ScreenMode.Administrator);
+        Assert.AreEqual(1, modeChanges);
+
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => state.SetMode((ScreenMode)99));
+    }
 }

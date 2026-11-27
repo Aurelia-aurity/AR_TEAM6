@@ -3,13 +3,27 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// A rectangular strike surface. Bounds are in the required surface transform's local XY plane.
+/// Supported 2D strike boundary shapes in a surface transform's local XY plane.
+/// </summary>
+public enum PadShape
+{
+    Rectangle = 0,
+    Circle = 1,
+    Annulus = 2
+}
+
+/// <summary>
+/// A strike surface. Bounds are in the required surface transform's local XY plane.
 /// </summary>
 public sealed class InstrumentPad
 {
     public string PadId;
     public Rect HitBox2D;
     public Transform HitSurface;
+    public PadShape Shape;
+    public Vector2 Center;
+    public float InnerRadius;
+    public float OuterRadius;
 }
 
 /// <summary>
@@ -17,6 +31,8 @@ public sealed class InstrumentPad
 /// </summary>
 public sealed class HitDetectionCore : IDisposable
 {
+    private const float MinSurfaceScale = 1e-6f;
+
     /// <summary>Distance in world units the tip must retreat in front of the surface to strike again.</summary>
     public float RearmDistance { get; set; } = 0.3f;
     public float MinVelocityToTrigger { get; set; } = 1.5f;
@@ -55,6 +71,14 @@ public sealed class HitDetectionCore : IDisposable
     public void ClearPads()
     {
         activePads.Clear();
+        ResetTrackingState();
+    }
+
+    /// <summary>
+    /// Clears tracking history and strike locks for both mallets while keeping registered pads.
+    /// </summary>
+    public void ResetTrackingState()
+    {
         leftMallet.Unlock();
         rightMallet.Unlock();
         leftMallet.ResetTracking();
@@ -62,28 +86,44 @@ public sealed class HitDetectionCore : IDisposable
     }
 
     /// <summary>
-    /// Subscribes to tracked mallet samples.
+    /// Clears tracking history and strike lock for one valid mallet ID (0 or 1).
+    /// </summary>
+    public void ResetMallet(int malletId)
+    {
+        MalletHitState mallet = GetMalletState(malletId);
+        if (mallet == null)
+        {
+            return;
+        }
+
+        mallet.Unlock();
+        mallet.ResetTracking();
+    }
+
+    /// <summary>
+    /// Subscribes to tracked mallet samples and tracking-lost notifications.
     /// </summary>
     public void Subscribe()
     {
         if (!isSubscribed)
         {
             GameEventBus.OnMalletsTracked += ProcessMalletStates;
+            GameEventBus.OnTrackingLostAt += HandleTrackingLost;
             isSubscribed = true;
         }
     }
 
     /// <summary>
-    /// Stops receiving tracked samples and clears sample history.
+    /// Stops receiving tracked samples and clears sample history and strike locks.
     /// </summary>
     public void Unsubscribe()
     {
         if (isSubscribed)
         {
             GameEventBus.OnMalletsTracked -= ProcessMalletStates;
+            GameEventBus.OnTrackingLostAt -= HandleTrackingLost;
             isSubscribed = false;
-            leftMallet.ResetTracking();
-            rightMallet.ResetTracking();
+            ResetTrackingState();
         }
     }
 
@@ -111,53 +151,80 @@ public sealed class HitDetectionCore : IDisposable
     public void ProcessMalletState(MalletState state)
     {
         if (!GameEventBus.IsActiveContext(state.ContextVersion))
+        {
             return;
+        }
+
+        MalletHitState mallet = GetMalletState(state.MalletId);
+        if (mallet == null || !IsFinite(state.TimestampMs) || !IsFinite(state.Confidence))
+        {
+            return;
+        }
+
         if (historyVersion != state.ContextVersion)
         {
-            leftMallet.Unlock();
-            rightMallet.Unlock();
-            leftMallet.ResetTracking();
-            rightMallet.ResetTracking();
+            ResetTrackingState();
             historyVersion = state.ContextVersion;
         }
 
-        MalletHitState mallet = state.MalletId == 0 ? leftMallet : rightMallet;
-        if (!mallet.TryAcceptTimestamp(state.TimestampMs))
+        if (!mallet.CanAcceptTimestamp(state.TimestampMs))
         {
             return;
         }
 
-        if (float.IsNaN(state.Confidence) || float.IsInfinity(state.Confidence) || state.Confidence <= 0.0f
-            || float.IsNaN(state.Position.x) || float.IsInfinity(state.Position.x)
-            || float.IsNaN(state.Position.y) || float.IsInfinity(state.Position.y)
-            || float.IsNaN(state.Position.z) || float.IsInfinity(state.Position.z))
+        if (state.Confidence <= 0.0f)
         {
             // 추적이 재개되면 새 이동 구간부터 판정한다.
+            mallet.AcceptTimestamp(state.TimestampMs);
             mallet.PreviousSample = null;
             return;
         }
 
-        MalletState? previous = mallet.PreviousSample;
-        mallet.PreviousSample = state;
+        if (!IsFinite(state.Position) || !IsFinite(state.Velocity))
+        {
+            return;
+        }
+
         if (mallet.IsWaitingForLift)
         {
+            mallet.AcceptTimestamp(state.TimestampMs);
+            mallet.PreviousSample = state;
             TryUnlockAfterLift(mallet, state.Position);
             return;
         }
 
+        MalletState? previous = mallet.PreviousSample;
         if (!previous.HasValue)
         {
+            mallet.AcceptTimestamp(state.TimestampMs);
+            mallet.PreviousSample = state;
             return;
         }
 
         double elapsedMs = state.TimestampMs - previous.Value.TimestampMs;
         if (elapsedMs > MaxTrackingGapMs)
         {
+            mallet.AcceptTimestamp(state.TimestampMs);
+            mallet.PreviousSample = state;
+            return;
+        }
+
+        float dtSeconds = (float)(elapsedMs / 1000.0);
+        if (dtSeconds <= 0f || !IsFinite(dtSeconds))
+        {
             return;
         }
 
         Vector3 previousPosition = previous.Value.Position;
-        Vector3 velocity = (state.Position - previousPosition) / (float)(elapsedMs / 1000.0);
+        Vector3 velocity = (state.Position - previousPosition) / dtSeconds;
+        if (!IsFinite(velocity))
+        {
+            return;
+        }
+
+        mallet.AcceptTimestamp(state.TimestampMs);
+        mallet.PreviousSample = state;
+
         for (int i = 0; i < activePads.Count; i++)
         {
             InstrumentPad pad = activePads[i];
@@ -180,6 +247,39 @@ public sealed class HitDetectionCore : IDisposable
         }
     }
 
+    private void HandleTrackingLost(int malletId, double timestampMs)
+    {
+        if (!IsFinite(timestampMs))
+        {
+            return;
+        }
+
+        MalletHitState mallet = GetMalletState(malletId);
+        if (mallet == null || !mallet.IsTimestampAtOrAfterLatest(timestampMs))
+        {
+            return;
+        }
+
+        mallet.Unlock();
+        mallet.PreviousSample = null;
+        mallet.AcceptTimestamp(timestampMs);
+    }
+
+    private MalletHitState GetMalletState(int malletId)
+    {
+        if (malletId == 0)
+        {
+            return leftMallet;
+        }
+
+        if (malletId == 1)
+        {
+            return rightMallet;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Releases the strike lock once the tip has retreated far enough.
     /// </summary>
@@ -195,7 +295,7 @@ public sealed class HitDetectionCore : IDisposable
 
         // 타격면 기준 거리. 면 앞쪽이 양수다.
         float liftDistance = Vector3.Dot(tipPosition - surface.position, surface.forward);
-        if (liftDistance > RearmDistance)
+        if (IsFinite(liftDistance) && liftDistance > RearmDistance)
         {
             mallet.Unlock();
         }
@@ -208,16 +308,20 @@ public sealed class HitDetectionCore : IDisposable
         out Vector3 contact, out float inwardSpeed)
     {
         Transform surface = pad.HitSurface;
-        inwardSpeed = CalculateInwardSpeed(velocity, surface);
         contact = default;
-        bool hasEnoughInwardSpeed = inwardSpeed > MinVelocityToTrigger;
-        if (!hasEnoughInwardSpeed)
+        inwardSpeed = CalculateInwardSpeed(velocity, surface);
+        if (!HasValidSurfaceScale(surface) || !IsFinite(inwardSpeed) || inwardSpeed <= MinVelocityToTrigger)
         {
             return false;
         }
 
         Vector3 previous = surface.InverseTransformPoint(previousWorld);
         Vector3 current = surface.InverseTransformPoint(currentWorld);
+        if (!IsFinite(previous) || !IsFinite(current))
+        {
+            return false;
+        }
+
         // 채 끝점이 타격면 앞에서 출발해 면에 닿거나 통과했는지 확인한다.
         if (!TryGetCrossingFraction(previous.z, current.z, out float fraction))
         {
@@ -225,13 +329,22 @@ public sealed class HitDetectionCore : IDisposable
         }
 
         // 타격면에 닿은 지점이 패드 범위 안인지 확인한다.
-        if (!IsContactWithinPad(pad.HitBox2D, previous, current, fraction))
+        if (!IsContactWithinPad(pad, previous, current, fraction))
         {
             return false;
         }
 
         contact = Vector3.Lerp(previousWorld, currentWorld, fraction);
-        return true;
+        return IsFinite(contact);
+    }
+
+    private static bool HasValidSurfaceScale(Transform surface)
+    {
+        Vector3 scale = surface.lossyScale;
+        return IsFinite(scale)
+            && Mathf.Abs(scale.x) > MinSurfaceScale
+            && Mathf.Abs(scale.y) > MinSurfaceScale
+            && Mathf.Abs(scale.z) > MinSurfaceScale;
     }
 
     /// <summary>
@@ -255,19 +368,95 @@ public sealed class HitDetectionCore : IDisposable
             return false;
         }
 
+        float denom = previousZ - currentZ;
+        if (denom <= 0f || !IsFinite(denom))
+        {
+            return false;
+        }
+
         // 두 샘플 사이에서 타격면에 닿는 비율
-        fraction = previousZ / (previousZ - currentZ);
-        return true;
+        fraction = Mathf.Clamp01(previousZ / denom);
+        return IsFinite(fraction);
     }
 
     /// <summary>
     /// Checks whether the intersection lies inside the pad's XY bounds.
     /// </summary>
-    private static bool IsContactWithinPad(Rect bounds, Vector3 previous, Vector3 current, float fraction)
+    private static bool IsContactWithinPad(InstrumentPad pad, Vector3 previous, Vector3 current, float fraction)
     {
         Vector3 contact = Vector3.Lerp(previous, current, fraction);
-        return bounds.Contains(new Vector2(contact.x, contact.y));
+        if (!IsFinite(contact))
+        {
+            return false;
+        }
+
+        Vector2 point = new Vector2(contact.x, contact.y);
+        switch (pad.Shape)
+        {
+            case PadShape.Circle:
+                return IsPointInCircle(point, pad.Center, pad.OuterRadius);
+            case PadShape.Annulus:
+                return IsPointInAnnulus(point, pad.Center, pad.InnerRadius, pad.OuterRadius);
+            default:
+                return IsPointInRect(point, pad.HitBox2D);
+        }
     }
+
+    private static bool IsPointInRect(Vector2 point, Rect bounds)
+    {
+        if (!IsFinite(bounds.x) || !IsFinite(bounds.y) || !IsFinite(bounds.width) || !IsFinite(bounds.height))
+        {
+            return false;
+        }
+
+        if (bounds.width <= 0f || bounds.height <= 0f)
+        {
+            return false;
+        }
+
+        return bounds.Contains(point);
+    }
+
+    private static bool IsPointInCircle(Vector2 point, Vector2 center, float outerRadius)
+    {
+        if (!IsFinite(center) || !IsFinite(outerRadius) || outerRadius <= 0f)
+        {
+            return false;
+        }
+
+        double dx = (double)point.x - center.x;
+        double dy = (double)point.y - center.y;
+        double distSq = dx * dx + dy * dy;
+        double outerSq = (double)outerRadius * outerRadius;
+        return distSq <= outerSq;
+    }
+
+    private static bool IsPointInAnnulus(Vector2 point, Vector2 center, float innerRadius, float outerRadius)
+    {
+        if (!IsFinite(center) || !IsFinite(innerRadius) || !IsFinite(outerRadius)
+            || innerRadius < 0f || outerRadius <= innerRadius)
+        {
+            return false;
+        }
+
+        double dx = (double)point.x - center.x;
+        double dy = (double)point.y - center.y;
+        double distSq = dx * dx + dy * dy;
+        double outerSq = (double)outerRadius * outerRadius;
+        if (distSq > outerSq)
+        {
+            return false;
+        }
+
+        // Strict > on innerRadius prevents overlap with a Circle pad sharing OuterRadius == innerRadius.
+        double innerSq = (double)innerRadius * innerRadius;
+        return innerRadius <= 0f || distSq > innerSq;
+    }
+
+    private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+    private static bool IsFinite(Vector2 value) => IsFinite(value.x) && IsFinite(value.y);
+    private static bool IsFinite(Vector3 value) => IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
 
     /// <summary>
     /// Maps the inward strike speed to a hit strength between 0 and 1.
@@ -295,19 +484,37 @@ public sealed class HitDetectionCore : IDisposable
         public bool IsWaitingForLift => LockedPad != null;
 
         /// <summary>
-        /// Records a finite timestamp if it is strictly newer than the last accepted timestamp.
+        /// Checks whether a finite timestamp is strictly newer than the last accepted timestamp.
         /// </summary>
-        public bool TryAcceptTimestamp(double timestampMs)
+        public bool CanAcceptTimestamp(double timestampMs)
         {
-            bool hasInvalidTimestamp = double.IsNaN(timestampMs) || double.IsInfinity(timestampMs);
-            bool isOutOfOrder = timestampMs <= latestTimestampMs;
-            if (hasInvalidTimestamp || isOutOfOrder)
+            if (!IsFinite(timestampMs))
             {
                 return false;
             }
 
+            return !latestTimestampMs.HasValue || timestampMs > latestTimestampMs.Value;
+        }
+
+        /// <summary>
+        /// Checks whether a tracking-lost timestamp is at or newer than the last accepted timestamp.
+        /// </summary>
+        public bool IsTimestampAtOrAfterLatest(double timestampMs)
+        {
+            if (!IsFinite(timestampMs))
+            {
+                return false;
+            }
+
+            return !latestTimestampMs.HasValue || timestampMs >= latestTimestampMs.Value;
+        }
+
+        /// <summary>
+        /// Records a timestamp that has already been validated.
+        /// </summary>
+        public void AcceptTimestamp(double timestampMs)
+        {
             latestTimestampMs = timestampMs;
-            return true;
         }
 
         /// <summary>

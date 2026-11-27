@@ -1,8 +1,10 @@
 using System.Collections;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 public sealed class CameraDisplayCursorTests
 {
@@ -16,14 +18,39 @@ public sealed class CameraDisplayCursorTests
         CameraDisplayView display = Object.FindFirstObjectByType<CameraDisplayView>();
         MalletCursorPresenter cursors = Object.FindFirstObjectByType<MalletCursorPresenter>();
         MalletCursorPreviewSource simulator = Object.FindFirstObjectByType<MalletCursorPreviewSource>();
+        ScreenControlBar controlBar = Object.FindFirstObjectByType<ScreenControlBar>();
         RectTransform left = FindCursor(display, "LeftCursor");
         RectTransform right = FindCursor(display, "RightCursor");
+        Toggle debugToggle = display.transform.Find("Footer/CursorDebugToggle").GetComponent<Toggle>();
+        Toggle mirrorToggle = display.transform.Find("Footer/MirrorToggle").GetComponent<Toggle>();
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
+        Assert.That(cursors.IsAdminMode, Is.False);
         Assert.That(cursors.DebugCursorsEnabled, Is.False);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.False);
+        Assert.That(debugToggle.interactable, Is.False);
+        Assert.That(mirrorToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(mirrorToggle.interactable, Is.True);
         Publish(cursors.ProjectionCamera);
         yield return null;
         yield return null;
         Assert.That(left.gameObject.activeSelf, Is.False);
         Assert.That(right.gameObject.activeSelf, Is.False);
+
+        // Even if debug mode is toggled programmatically in User mode, cursors remain hidden.
+        cursors.SetDebugCursorsEnabled(true);
+        Publish(cursors.ProjectionCamera);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Assert.That(right.gameObject.activeSelf, Is.False);
+        cursors.SetDebugCursorsEnabled(false);
+
+        CameraDisplayPreviewPlayTests.ClickModeButton(controlBar);
+        yield return null;
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.Administrator));
+        Assert.That(cursors.IsAdminMode, Is.True);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.True);
+        Assert.That(debugToggle.interactable, Is.True);
 
         CameraDisplayPreviewPlayTests.ClickToggleLabel(display, "CursorDebugToggle");
         yield return null;
@@ -85,6 +112,7 @@ public sealed class CameraDisplayCursorTests
         yield return new EnterPlayMode();
         yield return null;
         Object.FindFirstObjectByType<MalletCursorPreviewSource>().enabled = false;
+        Object.FindFirstObjectByType<ScreenControlBar>().State.SetMode(ScreenMode.Administrator);
         CameraDisplayView display = Object.FindFirstObjectByType<CameraDisplayView>();
         MalletCursorPresenter cursors = Object.FindFirstObjectByType<MalletCursorPresenter>();
         RectTransform left = FindCursor(display, "LeftCursor");
@@ -183,6 +211,128 @@ public sealed class CameraDisplayCursorTests
         yield return null;
         yield return null;
         Assert.That(left.gameObject.activeSelf, Is.True);
+        yield return new ExitPlayMode();
+    }
+
+    [UnityTest]
+    public IEnumerator AdminToUserTransitionImmediatelyHidesCursorsAndInvalidatesStaleSamples()
+    {
+        EditorSceneManager.OpenScene("Assets/Presentation/Scenes/CameraDisplayPreview.unity");
+        yield return new EnterPlayMode();
+        yield return null;
+        yield return null;
+        Object.FindFirstObjectByType<MalletCursorPreviewSource>().enabled = false;
+        CameraDisplayView display = Object.FindFirstObjectByType<CameraDisplayView>();
+        MalletCursorPresenter cursors = Object.FindFirstObjectByType<MalletCursorPresenter>();
+        ScreenControlBar controlBar = Object.FindFirstObjectByType<ScreenControlBar>();
+        RectTransform left = FindCursor(display, "LeftCursor");
+        RectTransform right = FindCursor(display, "RightCursor");
+        Toggle debugToggle = display.transform.Find("Footer/CursorDebugToggle").GetComponent<Toggle>();
+        Camera projection = cursors.ProjectionCamera;
+
+        CameraDisplayPreviewPlayTests.ClickModeButton(controlBar);
+        yield return null;
+        CameraDisplayPreviewPlayTests.ClickToggleLabel(display, "CursorDebugToggle");
+        float halfHeight = 5 * Mathf.Tan(projection.fieldOfView * Mathf.Deg2Rad * 0.5f);
+        float halfWidth = halfHeight * projection.aspect;
+        MalletState preTransitionLeft = State(0, projection.transform.TransformPoint(new Vector3(-halfWidth * 0.5f, -halfHeight * 0.5f, 5)));
+        MalletState preTransitionRight = State(1, projection.transform.TransformPoint(new Vector3(halfWidth * 0.5f, halfHeight * 0.5f, 5)));
+        GameEventBus.OnMalletsTracked?.Invoke(preTransitionLeft, preTransitionRight);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeInHierarchy, Is.True);
+        Assert.That(right.gameObject.activeInHierarchy, Is.True);
+        AssertCursorsRendered(display, left, right);
+
+        // Transitioning Administrator -> User must hide cursors synchronously and invalidate samples.
+        CameraDisplayPreviewPlayTests.ClickModeButton(controlBar);
+        Assert.That(controlBar.State.Mode, Is.EqualTo(ScreenMode.User));
+        Assert.That(cursors.IsAdminMode, Is.False);
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Assert.That(right.gameObject.activeSelf, Is.False);
+        Assert.That(debugToggle.gameObject.activeInHierarchy, Is.False);
+        Assert.That(debugToggle.interactable, Is.False);
+        Assert.That(display.transform.Find("Footer/MirrorToggle").GetComponent<Toggle>().interactable, Is.True);
+
+        // Tracking events arriving while in User mode must never show cursors.
+        Publish(projection);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Assert.That(right.gameObject.activeSelf, Is.False);
+
+        // Returning to Administrator mode must not resurrect pre-transition or User-mode samples.
+        CameraDisplayPreviewPlayTests.ClickModeButton(controlBar);
+        yield return null;
+        Assert.That(cursors.IsAdminMode, Is.True);
+        Assert.That(debugToggle.interactable, Is.True);
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Assert.That(right.gameObject.activeSelf, Is.False);
+
+        GameEventBus.OnMalletsTracked?.Invoke(preTransitionLeft, preTransitionRight);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeSelf, Is.False, "Pre-transition stale samples must stay rejected.");
+        Assert.That(right.gameObject.activeSelf, Is.False);
+
+        Publish(projection);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeInHierarchy, Is.True, "Fresh samples after returning to Admin mode should render.");
+        Assert.That(right.gameObject.activeInHierarchy, Is.True);
+        yield return new ExitPlayMode();
+    }
+
+    [UnityTest]
+    public IEnumerator IsolatedPresenterWithoutScreenControlBarDefaultsToAdminAndSupportsExplicitGate()
+    {
+        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        yield return new EnterPlayMode();
+        GameObject holder = new GameObject("InactiveHolder");
+        holder.SetActive(false);
+        GameObject root = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Presentation/Prefabs/CameraDisplay.prefab"), holder.transform);
+        Object.DestroyImmediate(root.GetComponent<ScreenControlBar>());
+        root.transform.SetParent(null, false);
+        Object.DestroyImmediate(holder);
+        CameraDisplayView display = root.GetComponent<CameraDisplayView>();
+        MalletCursorPresenter cursors = root.GetComponent<MalletCursorPresenter>();
+        Camera projection = new GameObject("ProjectionCamera", typeof(Camera)).GetComponent<Camera>();
+        Texture2D texture = new Texture2D(320, 180);
+        cursors.SetProjectionCamera(projection);
+        display.PresentFrame(texture);
+        yield return null;
+
+        RectTransform left = FindCursor(display, "LeftCursor");
+        RectTransform right = FindCursor(display, "RightCursor");
+        Toggle debugToggle = display.transform.Find("Footer/CursorDebugToggle").GetComponent<Toggle>();
+        Assert.That(display.IsAdminMode, Is.True);
+        Assert.That(cursors.IsAdminMode, Is.True);
+        Assert.That(debugToggle.interactable, Is.True);
+
+        cursors.SetDebugCursorsEnabled(true);
+        Publish(projection);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeInHierarchy, Is.True);
+        Assert.That(right.gameObject.activeInHierarchy, Is.True);
+
+        cursors.SetAdminMode(false);
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Assert.That(right.gameObject.activeSelf, Is.False);
+        Assert.That(debugToggle.interactable, Is.False);
+
+        cursors.SetAdminMode(true);
+        Assert.That(debugToggle.interactable, Is.True);
+        Assert.That(left.gameObject.activeSelf, Is.False);
+        Publish(projection);
+        yield return null;
+        yield return null;
+        Assert.That(left.gameObject.activeInHierarchy, Is.True);
+
+        Object.Destroy(texture);
+        Object.Destroy(projection.gameObject);
+        Object.Destroy(root);
         yield return new ExitPlayMode();
     }
 

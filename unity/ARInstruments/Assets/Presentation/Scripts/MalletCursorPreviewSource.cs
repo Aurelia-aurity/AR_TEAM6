@@ -19,7 +19,7 @@ public sealed class MalletCursorPreviewSource : MonoBehaviour
 
     private void Update()
     {
-        if (cursors == null || !cursors.isActiveAndEnabled || !cursors.DebugCursorsEnabled
+        if (cursors == null || !cursors.isActiveAndEnabled || !cursors.IsAdminMode || !cursors.DebugCursorsEnabled
             || display == null || !display.isActiveAndEnabled || display.Status != CameraDisplayStatus.Streaming
             || testProjectionCamera == null || cursors.ProjectionCamera != testProjectionCamera)
         {

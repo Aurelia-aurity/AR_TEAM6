@@ -26,13 +26,18 @@ public sealed class CameraDisplayView : MonoBehaviour
     [SerializeField] private Text statusDetail;
     [SerializeField] private RectTransform mirrorRoot;
     [SerializeField] private Toggle mirrorToggle;
+    [SerializeField] private GameObject footerRoot;
+    [SerializeField] private ScreenControlBar screenControlBar;
 
     private int rotation;
     private bool mirrorEnabled;
+    private bool adminMode = true;
+    private ScreenControlState boundControlState;
     private string lastStatusDetail;
 
     public CameraDisplayStatus Status { get; private set; }
     public bool MirrorEnabled => mirrorEnabled;
+    public bool IsAdminMode => adminMode;
     public float VideoAspectRatio => viewportAspect != null ? viewportAspect.aspectRatio : 16f / 9f;
 
     // Raised synchronously, including when input restarts before the next LateUpdate.
@@ -58,23 +63,84 @@ public sealed class CameraDisplayView : MonoBehaviour
     private void OnEnable()
     {
         Canvas.willRenderCanvases += RefreshImageSize;
+        BindControlBar();
         if (HasReferences)
         {
             mirrorToggle.onValueChanged.AddListener(SetMirrorMode);
-            mirrorToggle.interactable = true;
             SetMirrorMode(mirrorEnabled);
         }
+        ApplyAdminMode();
     }
 
     private void OnDisable()
     {
         Canvas.willRenderCanvases -= RefreshImageSize;
+        UnbindControlBar();
         if (mirrorToggle != null)
         {
             mirrorToggle.onValueChanged.RemoveListener(SetMirrorMode);
             mirrorToggle.interactable = false;
         }
         ShowWaiting();
+    }
+
+    public void SetAdminMode(bool value)
+    {
+        adminMode = value;
+        ApplyAdminMode();
+    }
+
+    private void BindControlBar()
+    {
+        UnbindControlBar();
+        ScreenControlBar bar = ScreenControlBar.Resolve(this, screenControlBar);
+        if (bar == null)
+            return;
+
+        boundControlState = bar.State;
+        boundControlState.ModeChanged += OnScreenModeChanged;
+        adminMode = boundControlState.Mode == ScreenMode.Administrator;
+    }
+
+    private void UnbindControlBar()
+    {
+        if (boundControlState != null)
+            boundControlState.ModeChanged -= OnScreenModeChanged;
+        boundControlState = null;
+    }
+
+    private void OnScreenModeChanged(ScreenMode mode)
+    {
+        SetAdminMode(mode == ScreenMode.Administrator);
+    }
+
+    private void ApplyAdminMode()
+    {
+        GameObject footer = ResolveFooterRoot();
+        if (footer != null && !footer.activeSelf)
+            footer.SetActive(true);
+        if (statusIndicator != null && statusIndicator.gameObject.activeSelf != adminMode)
+            statusIndicator.gameObject.SetActive(adminMode);
+        if (statusText != null && statusText.gameObject.activeSelf != adminMode)
+            statusText.gameObject.SetActive(adminMode);
+        if (statusDetail != null && statusDetail.gameObject.activeSelf != adminMode)
+            statusDetail.gameObject.SetActive(adminMode);
+        if (mirrorToggle != null)
+        {
+            if (!mirrorToggle.gameObject.activeSelf)
+                mirrorToggle.gameObject.SetActive(true);
+            mirrorToggle.interactable = isActiveAndEnabled;
+        }
+    }
+
+    private GameObject ResolveFooterRoot()
+    {
+        if (footerRoot != null)
+            return footerRoot;
+        Transform footer = transform.Find("Footer");
+        if (footer != null)
+            footerRoot = footer.gameObject;
+        return footerRoot;
     }
 
     /// <summary>

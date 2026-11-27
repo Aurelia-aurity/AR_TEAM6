@@ -130,6 +130,8 @@ MonoBehaviour:
   statusDetail: {fileID: 8146634846275620532}
   mirrorRoot: {fileID: 6394232956393927627}
   mirrorToggle: {fileID: 5213403427989648887}
+  footerRoot: {fileID: 9164978069235133821}
+  screenControlBar: {fileID: 771920001}
 --- !u!114 &2540719407644122211
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -147,6 +149,7 @@ MonoBehaviour:
   leftCursor: {fileID: 6731988114095474125}
   rightCursor: {fileID: 4415395444292296434}
   debugToggle: {fileID: 4249814844791985180}
+  screenControlBar: {fileID: 771920001}
   maxSampleAgeSeconds: 0.5
 --- !u!1 &586629504110747878
 GameObject:
@@ -262,8 +265,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: -6}
-  m_SizeDelta: {x: -80, y: -236}
+  m_AnchoredPosition: {x: 0, y: 32}
+  m_SizeDelta: {x: -80, y: -288}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &6657810636862278533
 CanvasRenderer:
@@ -2486,7 +2489,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: 0, y: 28}
+  m_AnchoredPosition: {x: 0, y: 108}
   m_SizeDelta: {x: -80, y: 60}
   m_Pivot: {x: 0.5, y: 0}
 
