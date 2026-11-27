@@ -1,11 +1,11 @@
 using UnityEditor;
 using UnityEngine;
 
-internal sealed class JangguAudioTuningWindow : EditorWindow
+internal sealed class InstrumentAudioTuningWindow : EditorWindow
 {
     private const string DefaultProfilePath = "Assets/Performance/Audio/JangguSoundProfile.asset";
 
-    [SerializeField] private JangguSoundProfile profile;
+    [SerializeField] private InstrumentSoundProfile profile;
     private Editor profileEditor;
     private Vector2 scroll;
     private GUIStyle saveButtonStyle;
@@ -23,7 +23,7 @@ internal sealed class JangguAudioTuningWindow : EditorWindow
             return;
         }
 
-        foreach (var preview in FindObjectsByType<JangguAudioPreview>(FindObjectsSortMode.None))
+        foreach (var preview in FindObjectsByType<InstrumentSamplePlayer>(FindObjectsSortMode.None))
         {
             if (preview.SaveSessionTuning())
             {
@@ -33,10 +33,18 @@ internal sealed class JangguAudioTuningWindow : EditorWindow
         }
     }
 
-    [MenuItem("ARInstruments/Janggu Audio Tuning")]
+    [MenuItem("ARInstruments/Audio Tuning/Janggu")]
     private static void Open()
     {
-        GetWindow<JangguAudioTuningWindow>("Janggu Audio Tuning");
+        var window = GetWindow<InstrumentAudioTuningWindow>("Instrument Audio Tuning");
+        window.profile = AssetDatabase.LoadAssetAtPath<InstrumentSoundProfile>(DefaultProfilePath);
+    }
+
+    [MenuItem("ARInstruments/Audio Tuning/Buk")]
+    private static void OpenBuk()
+    {
+        var window = GetWindow<InstrumentAudioTuningWindow>("Instrument Audio Tuning");
+        window.profile = AssetDatabase.LoadAssetAtPath<InstrumentSoundProfile>("Assets/Performance/Audio/BukSoundProfile.asset");
     }
 
     private void OnEnable()
@@ -44,15 +52,15 @@ internal sealed class JangguAudioTuningWindow : EditorWindow
         minSize = new Vector2(500, 380);
         if (profile == null)
         {
-            profile = AssetDatabase.LoadAssetAtPath<JangguSoundProfile>(DefaultProfilePath);
+            profile = AssetDatabase.LoadAssetAtPath<InstrumentSoundProfile>(DefaultProfilePath);
         }
     }
 
     private void OnGUI()
     {
-        profile = (JangguSoundProfile)EditorGUILayout.ObjectField("장구 음원 프로필", profile,
-            typeof(JangguSoundProfile), false);
-        Editor.CreateCachedEditor(profile, typeof(JangguSoundProfileEditor), ref profileEditor);
+        profile = (InstrumentSoundProfile)EditorGUILayout.ObjectField("악기 음원 프로필", profile,
+            typeof(InstrumentSoundProfile), false);
+        Editor.CreateCachedEditor(profile, typeof(InstrumentSoundProfileEditor), ref profileEditor);
         if (profileEditor == null)
         {
             return;

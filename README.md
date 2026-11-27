@@ -41,6 +41,7 @@ AR_TEAM6/                         # 현재 저장소 폴더: TEAM6
 - [B 작업용 카메라 표시 씬 안내](docs/presentation_camera_display_ko.md)
 - [장구 배치 미리보기](docs/janggu_placement_preview_ko.md)
 - [장구 타격음 비교 및 튜닝](docs/janggu_audio_preview_ko.md)
+- [북 모델·타격 미리보기](docs/buk_preview_ko.md)
 
 ## 현재 구현
 

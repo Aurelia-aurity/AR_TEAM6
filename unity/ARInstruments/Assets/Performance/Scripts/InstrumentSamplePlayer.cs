@@ -1,0 +1,266 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using static InstrumentSoundProfile;
+
+public class InstrumentSamplePlayer : MonoBehaviour
+{
+    private const int InitialVoicesPerSource = 8;
+
+    [SerializeField] private InstrumentSoundProfile profile;
+    [SerializeField] private AudioSource primarySource;
+    [SerializeField] private AudioSource secondarySource;
+
+    private InstrumentSoundProfile sessionProfile;
+    private int editedGains;
+    private int editedPitches;
+
+    public bool KeepSessionTuning { get; set; }
+    public InstrumentSoundProfile SavedProfile => profile;
+    public InstrumentSoundProfile Profile => sessionProfile != null ? sessionProfile : profile;
+
+    private readonly List<AudioSource> primaryVoices = new List<AudioSource>(InitialVoicesPerSource);
+    private readonly List<AudioSource> secondaryVoices = new List<AudioSource>(InitialVoicesPerSource);
+
+    private readonly List<InstrumentOutputLimiter> previewLimiters = new();
+    private Coroutine pendingLimiterAcquisition;
+
+    protected virtual void Awake()
+    {
+        if (profile != null)
+        {
+            sessionProfile = Instantiate(profile);
+        }
+
+        PrewarmVoices(primarySource, primaryVoices);
+        PrewarmVoices(secondarySource, secondaryVoices);
+    }
+
+    protected virtual void OnEnable()
+    {
+        if (!AcquireLimiters())
+        {
+            pendingLimiterAcquisition = StartCoroutine(AcquireLimitersAfterRemoval());
+        }
+    }
+
+    private bool AcquireLimiters()
+    {
+        bool allAvailable = true;
+        foreach (var listener in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
+        {
+            if (!listener.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            var limiter = listener.GetComponent<InstrumentOutputLimiter>();
+            if (limiter == null)
+            {
+                limiter = listener.gameObject.AddComponent<InstrumentOutputLimiter>();
+                limiter.PreviewUsers = 1;
+                previewLimiters.Add(limiter);
+            }
+            else if (limiter.PreviewUsers < 0)
+            {
+                // Wait for Unity to remove the old component before adding a replacement.
+                allAvailable = false;
+            }
+            else if (limiter.PreviewUsers > 0 && !previewLimiters.Contains(limiter))
+            {
+                limiter.PreviewUsers++;
+                previewLimiters.Add(limiter);
+            }
+        }
+
+        return allAvailable;
+    }
+
+    private IEnumerator AcquireLimitersAfterRemoval()
+    {
+        do
+        {
+            yield return null;
+        }
+        while (!AcquireLimiters());
+
+        pendingLimiterAcquisition = null;
+    }
+
+    protected virtual void OnDisable()
+    {
+        Stop();
+        if (pendingLimiterAcquisition != null)
+        {
+            StopCoroutine(pendingLimiterAcquisition);
+            pendingLimiterAcquisition = null;
+        }
+
+        foreach (var limiter in previewLimiters)
+        {
+            if (limiter != null && --limiter.PreviewUsers == 0)
+            {
+                limiter.PreviewUsers = -1;
+                Destroy(limiter);
+            }
+        }
+
+        previewLimiters.Clear();
+    }
+
+    protected virtual void OnDestroy()
+    {
+        if (sessionProfile != null)
+        {
+            Destroy(sessionProfile);
+        }
+    }
+
+    public float GetGain(int sample) => Profile != null ? Profile.GetGain(sample) : 1f;
+    public float GetPitch(int sample) => Profile != null ? Profile.GetPitch(sample) : 1f;
+    public void SetGain(int sample, float gain)
+    {
+        if (sessionProfile != null)
+        {
+            sessionProfile.SetGain(sample, gain);
+            editedGains |= 1 << sample;
+        }
+    }
+
+    public void SetPitch(int sample, float pitch)
+    {
+        if (sessionProfile != null)
+        {
+            sessionProfile.SetPitch(sample, pitch);
+            editedPitches |= 1 << sample;
+        }
+    }
+
+    public bool SaveSessionTuning()
+    {
+        if (!KeepSessionTuning || sessionProfile == null || profile == null ||
+            (editedGains | editedPitches) == 0)
+        {
+            return false;
+        }
+
+        for (int sample = 0; sample < Profile.NumberOfSamples; sample++)
+        {
+            int mask = 1 << sample;
+            if ((editedGains & mask) != 0)
+            {
+                profile.SetGain(sample, sessionProfile.GetGain(sample));
+            }
+
+            if ((editedPitches & mask) != 0)
+            {
+                profile.SetPitch(sample, sessionProfile.GetPitch(sample));
+            }
+        }
+
+        return true;
+    }
+
+    public void PlayReference(int strength)
+    {
+        Play(primarySource, primaryVoices, Profile?.GetReference(strength), 1f, 1f);
+    }
+
+    public void PlaySample(int sample)
+    {
+        AudioClip clip = Profile?.GetSample(sample);
+        Play(primarySource, primaryVoices, clip, GetGain(sample), GetPitch(sample));
+    }
+
+    public void PlayPair(int selection)
+    {
+        if (Profile == null) return;
+        int primaryStrength = selection / StrengthCount;
+        int secondaryStrength = selection % StrengthCount;
+        int secondarySample = Profile.SecondarySampleOffset + secondaryStrength;
+        Play(primarySource, primaryVoices, Profile?.GetSample(primaryStrength), GetGain(primaryStrength), GetPitch(primaryStrength));
+        Play(secondarySource, secondaryVoices, Profile?.GetSample(secondarySample), GetGain(secondarySample), GetPitch(secondarySample));
+    }
+
+    public bool SaveTuning()
+    {
+        bool previous = KeepSessionTuning;
+        KeepSessionTuning = true;
+        try
+        {
+            bool saved = SaveSessionTuning();
+#if UNITY_EDITOR
+            if (saved)
+            {
+                UnityEditor.EditorUtility.SetDirty(SavedProfile);
+                UnityEditor.AssetDatabase.SaveAssetIfDirty(SavedProfile);
+            }
+#endif
+            return saved;
+        }
+        finally { KeepSessionTuning = previous; }
+    }
+
+    public void Stop()
+    {
+        foreach (var voice in primaryVoices)
+        {
+            voice.Stop();
+        }
+
+        foreach (var voice in secondaryVoices)
+        {
+            voice.Stop();
+        }
+    }
+
+    private void PrewarmVoices(AudioSource template, List<AudioSource> voices)
+    {
+        if (template == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < InitialVoicesPerSource; index++)
+        {
+            AddVoice(template, voices);
+        }
+    }
+
+    private void Play(AudioSource template, List<AudioSource> voices, AudioClip clip, float gain, float pitch)
+    {
+        if (!isActiveAndEnabled || pendingLimiterAcquisition != null || template == null || clip == null || gain <= 0f)
+        {
+            return;
+        }
+
+        foreach (var voice in voices)
+        {
+            if (!voice.isPlaying)
+            {
+                PlayVoice(voice, clip, gain, pitch);
+                return;
+            }
+        }
+
+        // 준비한 소스가 모두 재생 중이면 새 소스를 추가해 이전 타격을 보존한다.
+        PlayVoice(AddVoice(template, voices), clip, gain, pitch);
+    }
+
+    private AudioSource AddVoice(AudioSource template, List<AudioSource> voices)
+    {
+        var voice = Instantiate(template, transform);
+        voice.name = $"{template.name} Voice {voices.Count + 1}";
+        voice.playOnAwake = false;
+        voice.clip = null;
+        voices.Add(voice);
+        return voice;
+    }
+
+    private static void PlayVoice(AudioSource voice, AudioClip clip, float gain, float pitch)
+    {
+        voice.volume = PlaybackGain;
+        voice.pitch = pitch;
+        voice.PlayOneShot(clip, gain);
+    }
+}

@@ -20,14 +20,14 @@ public sealed class JangguPreviewImportTests
     public void SetUp()
     {
         editorType = AppDomain.CurrentDomain.GetAssemblies()
-            .Select(assembly => assembly.GetType("JangguSoundProfileEditor"))
+            .Select(assembly => assembly.GetType("InstrumentSoundProfileEditor"))
             .First(type => type != null);
         profile = ScriptableObject.CreateInstance<JangguSoundProfile>();
         editor = Editor.CreateEditor(profile, editorType);
         platform = BuildPipeline.GetBuildTargetGroup(EditorUserBuildSettings.activeBuildTarget);
         fixturePath = $"Assets/Editor/JangguImportTest-{Guid.NewGuid():N}.wav";
         Assert.That(AssetDatabase.CopyAsset(
-            "Assets/Performance/Audio/JangguPreview/Janggu_1_1.wav", fixturePath), Is.True);
+            "Assets/Performance/Audio/Janggu/Janggu_1_1.wav", fixturePath), Is.True);
     }
 
     [TearDown]

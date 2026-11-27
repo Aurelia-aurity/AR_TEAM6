@@ -1,7 +1,7 @@
 using System;
 using NUnit.Framework;
 
-public sealed class JangguPeakLimiterTests
+public sealed class InstrumentPeakLimiterTests
 {
     private const float Tolerance = 0.000001f;
 
@@ -9,10 +9,10 @@ public sealed class JangguPeakLimiterTests
     [TestCase(2)]
     public void SignalBelowCeiling_PassesThroughUnchanged(int channels)
     {
-        var samples = new[] { 0f, 0.2f, -0.4f, JangguPeakLimiter.Ceiling };
+        var samples = new[] { 0f, 0.2f, -0.4f, InstrumentPeakLimiter.Ceiling };
         var expected = (float[])samples.Clone();
 
-        new JangguPeakLimiter().Process(samples, channels, 48000);
+        new InstrumentPeakLimiter().Process(samples, channels, 48000);
 
         Assert.That(samples, Is.EqualTo(expected));
     }
@@ -23,12 +23,12 @@ public sealed class JangguPeakLimiterTests
     {
         var samples = new[] { 4f, -2f, -8f, 3f, 0.5f, -0.5f };
 
-        new JangguPeakLimiter().Process(samples, channels, 48000);
+        new InstrumentPeakLimiter().Process(samples, channels, 48000);
 
         foreach (float sample in samples)
         {
             Assert.That(float.IsNaN(sample), Is.False);
-            Assert.That(Math.Abs(sample), Is.LessThanOrEqualTo(JangguPeakLimiter.Ceiling + Tolerance));
+            Assert.That(Math.Abs(sample), Is.LessThanOrEqualTo(InstrumentPeakLimiter.Ceiling + Tolerance));
         }
         Assert.That(samples[0], Is.GreaterThan(0f));
         Assert.That(samples[1], Is.LessThan(0f));
@@ -41,7 +41,7 @@ public sealed class JangguPeakLimiterTests
         var samples = new[] { 4f, -2f, -1.5f, 3f, 0.4f, -0.2f };
         var original = (float[])samples.Clone();
 
-        new JangguPeakLimiter().Process(samples, 2, 48000);
+        new InstrumentPeakLimiter().Process(samples, 2, 48000);
 
         for (int frame = 0; frame < samples.Length; frame += 2)
         {
@@ -62,9 +62,9 @@ public sealed class JangguPeakLimiterTests
             samples[index] = (float)(2.5 * Math.Sin(index * 0.05));
         }
         var expected = (float[])samples.Clone();
-        new JangguPeakLimiter().Process(expected, 2, sampleRate);
+        new InstrumentPeakLimiter().Process(expected, 2, sampleRate);
 
-        var limiter = new JangguPeakLimiter();
+        var limiter = new InstrumentPeakLimiter();
         int offset = 0;
         foreach (int length in new[] { 2, 510, 1024, 2560 })
         {
@@ -84,7 +84,7 @@ public sealed class JangguPeakLimiterTests
     [TestCase(48000)]
     public void AfterPeak_GainRecoversGraduallyAcrossBuffers(int sampleRate)
     {
-        var limiter = new JangguPeakLimiter();
+        var limiter = new InstrumentPeakLimiter();
         limiter.Process(new[] { 2f }, 1, sampleRate);
 
         var recovery = new float[sampleRate / 2];
@@ -108,7 +108,7 @@ public sealed class JangguPeakLimiterTests
     [TestCase(2)]
     public void SilenceAndEmptyBuffer_AreHandledWithoutErrors(int channels)
     {
-        var limiter = new JangguPeakLimiter();
+        var limiter = new InstrumentPeakLimiter();
         Assert.DoesNotThrow(() => limiter.Process(Array.Empty<float>(), channels, 48000));
 
         var silence = new float[128];

@@ -52,7 +52,7 @@ public sealed class JangguPreviewLimiterTests
         preview.enabled = false;
         yield return null;
         Assert.That(preview.gameObject.activeInHierarchy, Is.True);
-        Assert.That(Object.FindObjectsByType<JangguOutputLimiter>(FindObjectsSortMode.None), Is.Empty);
+        Assert.That(Object.FindObjectsByType<InstrumentOutputLimiter>(FindObjectsSortMode.None), Is.Empty);
         pairButton.onClick.Invoke();
         preview.PlaySample(0);
         preview.PlayDeong(0);
@@ -64,7 +64,7 @@ public sealed class JangguPreviewLimiterTests
 
         preview.enabled = true;
         yield return null;
-        Assert.That(Object.FindObjectsByType<JangguOutputLimiter>(FindObjectsSortMode.None), Is.Not.Empty);
+        Assert.That(Object.FindObjectsByType<InstrumentOutputLimiter>(FindObjectsSortMode.None), Is.Not.Empty);
         pairButton.onClick.Invoke();
         Assert.That(System.Array.Exists(preview.GetComponentsInChildren<AudioSource>(), source => source.isPlaying),
             Is.True, "Reenabling the preview must restore pair playback.");
@@ -78,30 +78,30 @@ public sealed class JangguPreviewLimiterTests
         previewScene = SceneManager.CreateScene("Additive preview");
         var first = CreatePreview();
         CreatePreview();
-        var limiter = listenerObject.GetComponent<JangguOutputLimiter>();
+        var limiter = listenerObject.GetComponent<InstrumentOutputLimiter>();
         Assert.That(limiter != null, Is.True);
 
         first.enabled = false;
         yield return null;
-        Assert.That(listenerObject.GetComponent<JangguOutputLimiter>(), Is.SameAs(limiter));
+        Assert.That(listenerObject.GetComponent<InstrumentOutputLimiter>(), Is.SameAs(limiter));
 
         yield return SceneManager.UnloadSceneAsync(previewScene);
         yield return null;
         Assert.That(listenerObject != null, Is.True);
-        Assert.That(listenerObject.GetComponent<JangguOutputLimiter>() == null, Is.True);
+        Assert.That(listenerObject.GetComponent<InstrumentOutputLimiter>() == null, Is.True);
     }
 
     [UnityTest]
     public IEnumerator ClosingPreview_PreservesAnExistingLimiter()
     {
-        listenerObject = new GameObject("Main listener", typeof(AudioListener), typeof(JangguOutputLimiter));
-        var existing = listenerObject.GetComponent<JangguOutputLimiter>();
+        listenerObject = new GameObject("Main listener", typeof(AudioListener), typeof(InstrumentOutputLimiter));
+        var existing = listenerObject.GetComponent<InstrumentOutputLimiter>();
         previewScene = SceneManager.CreateScene("Additive preview");
         CreatePreview();
 
         yield return SceneManager.UnloadSceneAsync(previewScene);
         yield return null;
-        Assert.That(listenerObject.GetComponent<JangguOutputLimiter>(), Is.SameAs(existing));
+        Assert.That(listenerObject.GetComponent<InstrumentOutputLimiter>(), Is.SameAs(existing));
     }
 
     private JangguAudioPreview CreatePreview()

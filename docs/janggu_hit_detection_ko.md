@@ -23,7 +23,18 @@
 
 프리뷰는 양쪽 안쪽 원판의 실제 메시 중심을 비교해 각 면의 바깥쪽을 구하고, 그쪽을 `HitSurface`의 +Z로 설정한다. 장구와 북은 A·B면의 X축 배치가 반대이므로 면 이름만으로 방향을 정하지 않는다. 타격 평면도 메시 두께의 바깥쪽 끝에 둔다.
 
-현재 숫자 설정은 [HitDetectionCore.cs](../unity/ARInstruments/Assets/Performance/Scripts/HitDetectionCore.cs)의 C# 속성이다. 테스트 씬에서만 시험하려면 [JangguHitPreview.cs](../unity/ARInstruments/Assets/Performance/Scripts/JangguHitPreview.cs)의 `new HitDetectionCore()`에 조정할 속성을 지정한다. 프리뷰의 배치 슬라이더는 장구 위치와 회전을 바꾼다.
+현재 숫자 설정은 [HitDetectionCore.cs](../unity/ARInstruments/Assets/Performance/Scripts/HitDetectionCore.cs)의 C# 속성이다. 공통 연결 객체인 `InstrumentHitRuntime`의 `Detection` 속성으로 판정 설정을 조정할 수 있다. 프리뷰의 배치 슬라이더는 장구 위치와 회전을 바꾼다.
+
+`DrumHitPreview`는 배치 조절, 채 드래그와 시나리오 재생을 담당하는 프리뷰 기반 컴포넌트다. [JangguHitPreview.cs](../unity/ARInstruments/Assets/Performance/Scripts/JangguHitPreview.cs)는 장구 모델 참조, 영역 ID와 덕·쿵 음원 매핑을 제공한다. 기존 장구 씬의 컴포넌트와 버튼 연결은 유지한다.
+
+## 실제 연주와 프리뷰의 공통 연결
+
+- `DrumHeadDefinition`은 메시 이름과 이벤트 영역 ID를 지정한다. `DrumStrikeSurfaces.TryCreate`는 배치된 모델에서 양쪽 타격면을 만들며, 카메라나 프리뷰 UI를 요구하지 않는다. 생성 실패 시 면을 남기지 않는다.
+- `InstrumentHitRuntime`은 등록할 `InstrumentPad` 목록을 받아 `Subscribe()` 시 `OnMalletsTracked`를 기존 판정기에 연결한다. 장구와 북을 함께 배치하면 두 모델의 `Pads`를 합쳐 한 런타임에 전달한다. `ResetTracking()`은 등록된 면을 유지하면서 이전 채 위치와 타격 잠금을 초기화한다.
+- `InstrumentHitAudio`는 `InstrumentSoundBinding`의 영역별 강·중·약 샘플 번호와 재생 함수(`Action<int>`)를 받는다. `Subscribe()` 후 현재 컨텍스트의 유효 타격만 재생하며, 프리뷰 표시 코드는 `GetLabel()`로 이름만 조회한다. 현재 강도 경계는 0.66과 0.33이다. 기존 장구 음량·피치·중첩 재생은 `JangguAudioPreview.PlaySample`을 재생 함수로 연결해 유지한다. 다른 악기는 해당 악기의 샘플 재생 함수를 연결한다.
+- 배치 흐름을 소유하는 컴포넌트가 활성화 시 생성·구독하고 비활성화 시 오디오 연결, 판정 런타임, 생성한 면을 각각 `Dispose()`한다. 실제 카메라 입력과 프리뷰 입력은 모두 `OnMalletsTracked`를 통해 같은 판정 경로에 들어간다. 생성된 면은 모델 자식이므로 모델 이동·회전을 따른다. 크기를 바꾸면 면을 다시 구성한다.
+
+실제 카메라 씬의 악기 배치 연결은 별도 통합 작업이다. `InstrumentHitRuntimeTests`는 프리뷰 컴포넌트 없이 장구·북 Prefab을 함께 배치하고 추적 이벤트 → 타격 판정 → 샘플 선택 경로를 검증한다. 이 테스트의 북 샘플은 가상 번호이며 북 전용 음원 준비나 실제 카메라 추적 정확도를 검증하지 않는다.
 
 ## 확인 방법
 

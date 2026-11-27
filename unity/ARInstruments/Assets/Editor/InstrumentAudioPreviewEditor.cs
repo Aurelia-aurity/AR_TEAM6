@@ -4,8 +4,8 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
-[CustomEditor(typeof(JangguSoundProfile))]
-internal sealed class JangguSoundProfileEditor : Editor
+[CustomEditor(typeof(InstrumentSoundProfile), true)]
+internal sealed class InstrumentSoundProfileEditor : Editor
 {
     private static readonly string[] Strengths = { "강", "중", "약" };
     private static readonly Type AudioUtil = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
@@ -18,10 +18,10 @@ internal sealed class JangguSoundProfileEditor : Editor
         "음원 에셋의 Inspector에서 Load Type을 Decompress On Load로 설정하고 Apply를 누르세요.";
 
     private string previewAssetPath;
-    private static JangguSoundProfileEditor activePreview;
+    private static InstrumentSoundProfileEditor activePreview;
     private string status;
 
-    public JangguAudioPreview ScenePreview { get; set; }
+    public InstrumentSamplePlayer ScenePreview { get; set; }
 
     private bool showReferences;
     private GUIStyle columnHeading;
@@ -30,7 +30,8 @@ internal sealed class JangguSoundProfileEditor : Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
-        var profile = (JangguSoundProfile)target;
+        var profile = (InstrumentSoundProfile)target;
+        if (profile is BukSoundProfile buk) { DrawBuk(buk); return; }
         var deong = serializedObject.FindProperty("deong");
         var deok = serializedObject.FindProperty("deok");
         var kung = serializedObject.FindProperty("kung");
@@ -44,7 +45,7 @@ internal sealed class JangguSoundProfileEditor : Editor
                 {
                     int selection = strength;
                     Play($"덩 {Strengths[strength]}", GetClip(deong, strength), 1f, 1f,
-                        () => ScenePreview?.PlayDeong(selection));
+                        () => ScenePreview?.PlayReference(selection));
                 }
             }
         }
@@ -58,7 +59,7 @@ internal sealed class JangguSoundProfileEditor : Editor
         {
             foreach (var controls in FindObjectsByType<JangguAudioPreviewControls>(FindObjectsSortMode.None))
             {
-                controls.RefreshFromInspector(ScenePreview);
+                controls.RefreshFromInspector(ScenePreview as JangguAudioPreview);
             }
         }
 
@@ -145,6 +146,44 @@ internal sealed class JangguSoundProfileEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 
+    private void DrawBuk(BukSoundProfile profile)
+    {
+        EditorGUILayout.LabelField("좌고 · A/B 공통 음원", EditorStyles.boldLabel);
+        int selected = DrawSampleSettings("좌고", "volumes", "pitches", 0);
+        if (serializedObject.ApplyModifiedProperties() && ScenePreview != null)
+            foreach (var controls in FindObjectsByType<BukAudioPreviewControls>(FindObjectsSortMode.None))
+                controls.RefreshFromInspector(ScenePreview);
+        var clips = serializedObject.FindProperty("clips");
+        if (selected >= 0)
+            Play($"좌고 {Strengths[selected]}", GetClip(clips, selected), profile.GetGain(selected),
+                profile.GetPitch(selected), () => ScenePreview?.PlaySample(selected));
+        EditorGUILayout.LabelField("양면 동시 타격", EditorStyles.boldLabel);
+        columnHeading ??= new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleCenter };
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            GUILayout.Label("A / B", GUILayout.Width(55));
+            foreach (string strength in Strengths)
+                GUILayout.Label($"B {strength}", columnHeading, GUILayout.ExpandWidth(true));
+        }
+        for (int row = 0; row < Strengths.Length; row++)
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label($"A {Strengths[row]}", GUILayout.Width(55));
+                for (int column = 0; column < Strengths.Length; column++)
+                {
+                    int a = row;
+                    int b = column;
+                    if (GUILayout.Button($"{Strengths[a]} + {Strengths[b]}"))
+                        Play($"좌고 {Strengths[a]} + {Strengths[b]}", GetClip(clips, a), profile.GetGain(a),
+                            profile.GetPitch(a), () => ScenePreview?.PlayPair(a * 3 + b), GetClip(clips, b),
+                            profile.GetGain(b), profile.GetPitch(b), true);
+                }
+            }
+        if (GUILayout.Button("재생 중지")) { StopPlayback(); if (Application.isPlaying) ScenePreview?.Stop(); }
+        if (!string.IsNullOrEmpty(status)) EditorGUILayout.HelpBox(status, MessageType.None);
+        EditorGUILayout.PropertyField(clips);
+        serializedObject.ApplyModifiedProperties();
+    }
     private static bool RequiresPreviewImportSettings(AudioClip clip)
     {
         if (clip.loadType == AudioClipLoadType.DecompressOnLoad)
@@ -183,10 +222,10 @@ internal sealed class JangguSoundProfileEditor : Editor
                 GUILayout.Label($"{stroke} {Strengths[index]}", GUILayout.Width(45));
                 float oldLabelWidth = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 35f;
-                volumes[index] = EditorGUILayout.Slider("음량", volumes[index], 0f, JangguSoundProfile.MaxGain);
+                volumes[index] = EditorGUILayout.Slider("음량", volumes[index], 0f, InstrumentSoundProfile.MaxGain);
                 GUILayout.Space(16f);
                 pitches[index] = EditorGUILayout.Slider("피치", pitches[index],
-                    JangguSoundProfile.MinPitch, JangguSoundProfile.MaxPitch);
+                    InstrumentSoundProfile.MinPitch, InstrumentSoundProfile.MaxPitch);
                 EditorGUIUtility.labelWidth = oldLabelWidth;
                 if (GUILayout.Button("재생", GUILayout.Width(42)))
                 {
@@ -227,8 +266,8 @@ internal sealed class JangguSoundProfileEditor : Editor
                 return;
             }
 
-            firstVolume *= JangguSoundProfile.PlaybackGain;
-            secondVolume *= JangguSoundProfile.PlaybackGain;
+            firstVolume *= InstrumentSoundProfile.PlaybackGain;
+            secondVolume *= InstrumentSoundProfile.PlaybackGain;
 
             // Unity의 에셋 미리듣기는 임포트된 클립을 사용한다.
             string mixError = null;
@@ -323,9 +362,9 @@ internal sealed class JangguSoundProfileEditor : Editor
             }
         }
 
-        new JangguPeakLimiter().Process(mixedSamples, first.channels, first.frequency);
+        new InstrumentPeakLimiter().Process(mixedSamples, first.channels, first.frequency);
 
-        previewAssetPath = $"Assets/Editor/JangguPreview-{Guid.NewGuid():N}.wav";
+        previewAssetPath = $"Assets/Editor/InstrumentPreview-{Guid.NewGuid():N}.wav";
         try
         {
             using (var writer = new BinaryWriter(File.Create(previewAssetPath)))
@@ -413,25 +452,25 @@ internal sealed class JangguSoundProfileEditor : Editor
     }
 }
 
-[CustomEditor(typeof(JangguAudioPreview))]
-public sealed class JangguAudioPreviewEditor : Editor
+[CustomEditor(typeof(InstrumentSamplePlayer), true)]
+public sealed class InstrumentSamplePlayerEditor : Editor
 {
     private Editor profileEditor;
     private bool showSceneBindings;
 
     public override void OnInspectorGUI()
     {
-        var preview = (JangguAudioPreview)target;
+        var preview = (InstrumentSamplePlayer)target;
         var profile = preview.Profile;
         if (profile != null)
         {
-            CreateCachedEditor(profile, typeof(JangguSoundProfileEditor), ref profileEditor);
-            ((JangguSoundProfileEditor)profileEditor).ScenePreview = preview;
+            CreateCachedEditor(profile, typeof(InstrumentSoundProfileEditor), ref profileEditor);
+            ((InstrumentSoundProfileEditor)profileEditor).ScenePreview = preview;
             profileEditor.OnInspectorGUI();
         }
         else
         {
-            EditorGUILayout.HelpBox("장구 음원 프로필을 연결하세요.", MessageType.Warning);
+            EditorGUILayout.HelpBox("악기 음원 프로필을 연결하세요.", MessageType.Warning);
         }
 
         serializedObject.Update();

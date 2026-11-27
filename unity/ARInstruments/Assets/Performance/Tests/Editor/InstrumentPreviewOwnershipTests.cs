@@ -5,7 +5,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
-public sealed class JangguPreviewOwnershipTests
+public sealed class InstrumentPreviewOwnershipTests
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.NonPublic;
     private Type editorType;
@@ -22,7 +22,7 @@ public sealed class JangguPreviewOwnershipTests
     {
         // 테스트 어셈블리에서 기본 Editor 어셈블리의 타입을 찾아 사용한다.
         editorType = AppDomain.CurrentDomain.GetAssemblies()
-            .Select(assembly => assembly.GetType("JangguSoundProfileEditor"))
+            .Select(assembly => assembly.GetType("InstrumentSoundProfileEditor"))
             .First(type => type != null);
         profile = ScriptableObject.CreateInstance<JangguSoundProfile>();
         clip = AudioClip.Create("Ownership test", 44100, 1, 44100, false);
@@ -163,6 +163,30 @@ public sealed class JangguPreviewOwnershipTests
         Call(editor, "Play", "Test preview", clip, 1f, 1f, (Action)(() => { }),
             null, 0f, 1f, false);
         Assert.That(ActivePreview, Is.SameAs(editor));
+    }
+
+    [Test]
+    public void SwitchingFromJangguToBuk_OldTimerAndEditorCannotStopBuk()
+    {
+        var buk = ScriptableObject.CreateInstance<BukSoundProfile>();
+        Editor bukEditor = Editor.CreateEditor(buk, editorType);
+        try
+        {
+            Play(first);
+            string previousPath = PreviewPath(first);
+            Play(bukEditor);
+            Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(previousPath), Is.Null);
+            editorType.GetField("previewEnd", InstanceFlags).SetValue(first, -1d);
+            Call(first, "FinishPreviewWhenElapsed");
+            UnityEngine.Object.DestroyImmediate(first);
+            Assert.That(ActivePreview, Is.SameAs(bukEditor));
+            Assert.That(AssetDatabase.LoadAssetAtPath<AudioClip>(PreviewPath(bukEditor)), Is.Not.Null);
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(bukEditor);
+            UnityEngine.Object.DestroyImmediate(buk);
+        }
     }
 
     private string PreviewPath(Editor editor)
